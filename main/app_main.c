@@ -1,8 +1,5 @@
-/*
- * ESP-IDF application. Everything below the includes is what a CyThing user
- * writes: the two command hooks and a call to cything_begin(). The Arduino /
- * PlatformIO equivalent is examples/Basic/Basic.ino — see doc/cy_thing_lib.md.
- */
+/* ESP-IDF harness: the two hooks below + cything_begin(). Arduino/PlatformIO
+ * equivalent: examples/Basic/Basic.ino — see doc/cy_thing_lib.md. */
 #include <string.h>
 #include "CyThingEsp32.h"
 
