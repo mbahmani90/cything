@@ -361,7 +361,7 @@ subject to the three rules in §1.
 
 | | Arduino IDE | PlatformIO | ESP-IDF (external project) |
 |---|---|---|---|
-| Install | Sketch → Include Library → Add .ZIP (or Library Manager once published) | `lib_deps = https://github.com/mbahmani90/cylinko_firmware.git` (pin a tag: `…git#1.0.0`) | clone/submodule the repo anywhere, then in the consumer's own root `CMakeLists.txt`, before `include($ENV{IDF_PATH}/tools/cmake/project.cmake)`: `set(EXTRA_COMPONENT_DIRS "<path>/cylinko_firmware/components")` (or symlink `components/cything` into the consumer's own `components/`) |
+| Install | Sketch → Include Library → Add .ZIP (or Library Manager once published) | `lib_deps = https://github.com/mbahmani90/cything.git` (pin a tag: `…git#1.0.0`) | `idf.py add-dependency "mbahmani90/cything^1.0.0"` once published to the Component Registry (§5's "Registry publishing"); until then, clone/submodule the repo anywhere and, in the consumer's own root `CMakeLists.txt`, before `include($ENV{IDF_PATH}/tools/cmake/project.cmake)`: `set(EXTRA_COMPONENT_DIRS "<path>/cything/components")` (or symlink `components/cything` into the consumer's own `components/`) |
 | `sdkconfig` | n/a — Arduino core is precompiled | n/a with `framework = arduino` | **copy this repo's [sdkconfig.defaults](../sdkconfig.defaults) into the consumer's own project root.** It is not optional: `CONFIG_BT_ENABLED` / `CONFIG_BT_NIMBLE_ENABLED` (pairing needs NimBLE — without them IDF's `bt` component doesn't even expose `esp_bt.h`, a hard compile error in `src/ble/`), `CONFIG_PARTITION_TABLE_CUSTOM*` (points at `partitions.csv`), `CONFIG_MBEDTLS_X509_CREATE_C` (provisioning's CSR). Confirmed by building a real standalone project against `components/cything` |
 | Board package | Boards Manager → *esp32 by Espressif Systems* 3.3.x | `platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.311/platform-espressif32.zip`, `framework = arduino` | whatever `idf.py set-target` the consumer already uses — nothing CyThing-specific |
 | Partition table | copy `partitions/cything-<size>.csv` into the sketch folder as `partitions.csv` (4 MB unless you know your module is bigger) and set *Tools → Flash Size* to match | `board_build.partitions = cything-<size>.csv`, `board_upload.flash_size = <size>` | copy `partitions/cything-<size>.csv` in as the consumer's own `partitions.csv`, same as this repo's root `CMakeLists.txt` (`set(PARTITION_TABLE_CSV "partitions.csv")`) |
@@ -371,12 +371,11 @@ subject to the three rules in §1.
 The consumer's own `main/` is shaped exactly like this repo's: implement
 `app_command_handle_line` / `app_mqtt_command_handle` (+ optionally
 `app_command_is_public`), call `cything_begin()` from `app_main()`, and
-`PRIV_REQUIRES cything` in its `idf_component_register()` call. Not yet
-done: publishing `components/cything` to the Espressif Component Registry
-(`idf_component.yml` + `idf.py add-dependency`) — `EXTRA_COMPONENT_DIRS` /
-git submodule is the same distribution model already used for PlatformIO
-above, so it needs no new mechanism to be usable today; registry publishing
-is a separate follow-up.
+`PRIV_REQUIRES cything` in its `idf_component_register()` call —
+**`mbahmani90__cything` instead**, if resolved through the Component
+Registry rather than `EXTRA_COMPONENT_DIRS`/a submodule (see below: the
+registry namespaces the component under `managed_components/`, a plain
+clone doesn't).
 
 ### Registry publishing
 

@@ -10,8 +10,8 @@
 #   library.json                  "version": "1.1.0"     (PlatformIO)
 #   src/device_config/device_config.h  FIRMWARE_VERSION   (what the device reports
 #                                                          in GET_INFO / MQTT get-info)
-# then commits "Release 1.1.0", tags 1.1.0 and pushes master + the tag.
-# Refuses to run on a dirty tree, off master, or if the tag already exists.
+# then commits "Release 1.1.0", tags 1.1.0 and pushes main + the tag.
+# Refuses to run on a dirty tree, off main, or if the tag already exists.
 set -euo pipefail
 
 VERSION="${1:-}"
@@ -22,8 +22,8 @@ fi
 
 cd "$(git rev-parse --show-toplevel)"
 
-if [[ "$(git branch --show-current)" != "master" ]]; then
-    echo "release.sh: switch to master first (releases are cut from merged master)" >&2
+if [[ "$(git branch --show-current)" != "main" ]]; then
+    echo "release.sh: switch to main first (releases are cut from merged main)" >&2
     exit 1
 fi
 if [[ -n "$(git status --porcelain)" ]]; then
@@ -31,8 +31,8 @@ if [[ -n "$(git status --porcelain)" ]]; then
     exit 1
 fi
 git fetch -q origin
-if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/master)" ]]; then
-    echo "release.sh: local master differs from origin/master — pull/push first" >&2
+if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+    echo "release.sh: local main differs from origin/main — pull/push first" >&2
     exit 1
 fi
 if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null || git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
@@ -57,8 +57,8 @@ else
     git commit -q -m "Release $VERSION"
 fi
 git tag -a "$VERSION" -m "CyThing $VERSION"
-git push -q origin master "$VERSION"
+git push -q origin main "$VERSION"
 
 echo "Released $VERSION: $(git rev-parse --short HEAD) tagged and pushed."
 echo "  Arduino ZIP:  gh release create $VERSION --generate-notes   (optional)"
-echo "  PlatformIO:   lib_deps = https://github.com/mbahmani90/cylinko_firmware.git#$VERSION"
+echo "  PlatformIO:   lib_deps = https://github.com/mbahmani90/cything.git#$VERSION"

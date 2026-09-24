@@ -1,9 +1,14 @@
 # CyThing
 
-ESP32 smart-device firmware, packaged as a library. It brings up Wi-Fi
-(pairing over BLE or a soft-AP → station), a TCP command server and UDP
-discovery on the LAN, AWS IoT MQTT with per-device certificate provisioning, and HTTPS
-OTA — and leaves exactly two functions for the device developer to write:
+ESP32 smart-device firmware, packaged as a library for **Arduino IDE,
+PlatformIO, and plain ESP-IDF alike** — same source, same two hooks, same
+behavior, whichever one you build with. It brings up Wi-Fi (pairing over BLE
+or a soft-AP → station), a TCP command server and UDP discovery on the LAN,
+AWS IoT MQTT with per-device certificate provisioning, and HTTPS OTA — and
+leaves exactly two functions for the device developer to write. The Arduino
+sketch below is the shortest way to show the API; the same two functions,
+in plain C, are what an ESP-IDF `main/app_main.c` implements too (see
+["Using it"](#using-it) and [examples/Basic](examples/Basic/Basic.ino)).
 
 ```cpp
 #include <CyThingEsp32.h>
@@ -35,14 +40,20 @@ Design, rules for hook code, and the plan are in
 
 ## Using it
 
-| | Arduino IDE | PlatformIO | ESP-IDF (`idf.py`) |
+CyThing is an ESP-IDF project you can build directly (clone this repo, see
+["Building the example"](#building-the-example) below), **and** a component
+you can drop into a *different* ESP-IDF project — the two aren't the same
+thing. The table below is about consuming the library, in either style:
+
+| | Arduino IDE | PlatformIO | ESP-IDF — your own project |
 |---|---|---|---|
-| Get the library | *Sketch → Include Library → Add .ZIP* (or Library Manager once published); also install **NimBLE-Arduino** (≥ 2.5.1) from Library Manager | `lib_deps = https://github.com/mbahmani90/cylinko_firmware.git#1.0.0` (NimBLE-Arduino is pulled in as a dependency) | clone this repo — it is the IDF project |
-| Board package | *esp32 by Espressif Systems* 3.3.x | pioarduino platform (see [platformio.ini](platformio.ini)); the official `espressif32` platform is too old | ESP-IDF 6.0.x or 5.5.x |
-| Partition table | copy `partitions/cything-<size>.csv` into the sketch folder as `partitions.csv`; set *Tools → Flash Size* to match | `board_build.partitions` + `board_upload.flash_size` (envs in `platformio.ini`) | `partitions.csv` (4 MB) or `sdkconfig.defaults.<size>` |
-| Your commands | the two hooks in the sketch | same | `main/app_main.c` |
-| Claim cert/key (optional) | paste the PEMs into the `claim_cert.pem.h` / `claim_key.pem.h` tabs — see below | same three files under `src/` | `main/claim_credentials.cpp` + the two `.pem.h` (see `.example`), then `idf.py reconfigure` |
-| Channel/model config (optional) | the `cything_config.ino` + `cything_network_spec.h` + `cything_device_params.h` tabs, all three already in the sketch the app exports — see below | same three files under `src/` | `main/cything_config.cpp` + the two headers (see `.example`), then `idf.py reconfigure` |
+| Get the library | *Sketch → Include Library → Add .ZIP* (or Library Manager once published); also install **NimBLE-Arduino** (≥ 2.5.1) from Library Manager | `lib_deps = https://github.com/mbahmani90/cything.git#1.0.0` (NimBLE-Arduino is pulled in as a dependency) | `idf.py add-dependency "mbahmani90/cything^1.0.0"` once published to the [Component Registry](https://components.espressif.com); until then, clone/submodule this repo anywhere and add `set(EXTRA_COMPONENT_DIRS "<path>/cything/components")` to your project's root `CMakeLists.txt` — see [doc/cy_thing_lib.md §5](doc/cy_thing_lib.md) |
+| Board package | *esp32 by Espressif Systems* 3.3.x | pioarduino platform (see [platformio.ini](platformio.ini)); the official `espressif32` platform is too old | whatever `idf.py set-target` you already use — nothing CyThing-specific |
+| `sdkconfig` | n/a — Arduino core is precompiled | n/a with `framework = arduino` | copy this repo's [sdkconfig.defaults](sdkconfig.defaults) into your project root — **not optional**: BLE (`CONFIG_BT_NIMBLE_ENABLED`), the partition table, and mbedTLS's CSR support all come from it |
+| Partition table | copy `partitions/cything-<size>.csv` into the sketch folder as `partitions.csv`; set *Tools → Flash Size* to match | `board_build.partitions` + `board_upload.flash_size` (envs in `platformio.ini`) | copy `partitions/cything-<size>.csv` in as your own `partitions.csv` |
+| Your commands | the two hooks in the sketch | same | your own `main/app_main.c`, shaped like [main/app_main.c](main/app_main.c) in this repo |
+| Claim cert/key (optional) | paste the PEMs into the `claim_cert.pem.h` / `claim_key.pem.h` tabs — see below | same three files under `src/` | same `claim_credentials.cpp` pattern as this repo's `main/` (see `main/claim_credentials.cpp.example`) |
+| Channel/model config (optional) | the `cything_config.ino` + `cything_network_spec.h` + `cything_device_params.h` tabs, all three already in the sketch the app exports — see below | same three files under `src/` | same `cything_config.cpp` pattern (see `main/cything_config.cpp.example`) |
 
 ### Channel and model configuration (optional)
 
@@ -123,7 +134,12 @@ Rules for hook code: they run on library tasks, not `loop()` — keep them
 short, no `delay()`; `mqtt_publish_response()` only inside the MQTT hook;
 don't use `WiFi.h`, the library owns the Wi-Fi driver.
 
-## Building the IDF project
+## Building the example
+
+This repo is itself a buildable ESP-IDF project (`main/` + `components/cything`)
+— the quickest way to see CyThing running, or a starting point to fork. This
+is separate from adding CyThing to a *different* ESP-IDF project (the third
+column above): here you're building this repo directly.
 
 ```bash
 source ~/.espressif/v6.0.2/esp-idf/export.sh
@@ -145,10 +161,11 @@ the 8/16 MB variants.
 | `partitions/` | partition tables per flash size |
 | `doc/` | [cy_thing_lib.md](doc/cy_thing_lib.md) (the library), [tcp-server.md](doc/tcp-server.md), [local-auth.md](doc/local-auth.md) (password pairing + encrypted local link), [udp-discovery.md](doc/udp-discovery.md), [pairing.md](doc/pairing.md), [ble-pairing.md](doc/ble-pairing.md), [ble-scan-beacon.md](doc/ble-scan-beacon.md), [send-buffers.md](doc/send-buffers.md), [tasks.md](doc/tasks.md), [git-workflow.md](doc/git-workflow.md) |
 | `scripts/release.sh` | cuts a release: one version into `library.properties`, `library.json`, `FIRMWARE_VERSION`; tag; push |
+| `scripts/pack_component.sh` | packages `components/cything` as a self-contained archive for the Espressif Component Registry — see [cy_thing_lib.md](doc/cy_thing_lib.md) §5 "Registry publishing" |
 | `scripts/local_auth_client.py` | pair / authenticate / manage a device over the local link from a computer — see [doc/local-auth.md](doc/local-auth.md) |
 | `scripts/ble_pair.py` | pair a device with a router over BLE from a computer (`pip install bleak`) — see [doc/ble-pairing.md](doc/ble-pairing.md) |
 
 ## Contributing / releasing
 
 Every change goes through a branch and a PR ([doc/git-workflow.md](doc/git-workflow.md)).
-Whenever `master` is stable, tag it: `scripts/release.sh MAJOR.MINOR.PATCH`.
+Whenever `main` is stable, tag it: `scripts/release.sh MAJOR.MINOR.PATCH`.
