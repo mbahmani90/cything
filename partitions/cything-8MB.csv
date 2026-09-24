@@ -1,0 +1,13 @@
+# CyThing partition table — 8 MB flash. Two OTA slots of 3M, no factory
+# partition (Arduino-standard nvs/otadata offsets); the three 4K CyThing data
+# partitions; the rest as a LittleFS/SPIFFS `storage` for the application.
+# Partitions are found by type/subtype, never by offset — see doc/cy_thing_lib.md §4.
+# Name,      Type, SubType, Offset,    Size
+nvs,        data, nvs,     0x9000,    20K,
+otadata,    data, ota,     0xE000,    8K,
+ota_0,      app,  ota_0,   0x10000,   3M,
+ota_1,      app,  ota_1,   0x310000,  3M,
+wifi_info,  0x41, 0x05,    0x610000,  4K,
+rst_count,  0x42, 0x06,    0x611000,  4K,
+boot,       0x59, 0x0B,    0x612000,  4K,
+storage,    data, spiffs,  0x613000,  1972K,

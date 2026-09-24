@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 610" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>Send buffer block diagram</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/>
+    </marker>
+    <style>
+      .box   { fill:#fff; stroke:#333; stroke-width:1.5; }
+      .fn    { fill:#fff8e1; stroke:#333; stroke-width:1.5; }
+      .fifo  { fill:#f4f4f4; stroke:#333; stroke-width:1.5; }
+      .task  { fill:#e8f0fe; stroke:#333; stroke-width:1.5; }
+      .edge  { fill:none; stroke:#333; stroke-width:1.5; marker-end:url(#arrow); }
+      .lbl   { fill:#333; text-anchor:middle; }
+      .ttl   { fill:#333; text-anchor:middle; font-weight:bold; font-size:12px; font-family:Menlo, Consolas, monospace; }
+      .code  { fill:#333; font-size:10.5px; font-family:Menlo, Consolas, monospace; }
+      .codec { fill:#333; font-size:10.5px; font-family:Menlo, Consolas, monospace; text-anchor:middle; }
+      .small { fill:#555; font-size:11px; text-anchor:middle; }
+      .note  { fill:#333; font-size:12px; }
+      .notec { fill:#333; font-size:12px; font-family:Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect width="1240" height="610" fill="#fff"/>
+
+  <!-- Producers (top row) -->
+  <rect class="box" x="185" y="30" width="150" height="44" rx="4"/>
+  <text class="lbl" x="260" y="48">Client 1</text>
+  <text class="small" x="260" y="64">tcp_client_recv_task</text>
+
+  <rect class="box" x="365" y="30" width="150" height="44" rx="4"/>
+  <text class="lbl" x="440" y="48">Client 2</text>
+  <text class="small" x="440" y="64">tcp_client_recv_task</text>
+
+  <rect class="box" x="545" y="30" width="150" height="44" rx="4"/>
+  <text class="lbl" x="620" y="48">Client 3</text>
+  <text class="small" x="620" y="64">tcp_client_recv_task</text>
+
+  <text class="lbl" x="800" y="58" font-size="22">&#8230;</text>
+
+  <rect class="box" x="905" y="30" width="150" height="44" rx="4" stroke-dasharray="5 3"/>
+  <text class="lbl" x="980" y="48">Device Routine</text>
+  <text class="small" x="980" y="64">GPIO, ADC, SPI, I2C (future)</text>
+
+  <!-- Shared producer entry point -->
+  <rect class="fn" x="380" y="140" width="480" height="62" rx="4"/>
+  <text class="ttl" x="620" y="160">send_data_to_clients(sock, data, len)</text>
+  <text class="codec" x="620" y="178">update_response_id();  target = (sock == SEND_TO_ALL) ? 0 : sock</text>
+  <text class="codec" x="620" y="193">TCP: "&lt;target&gt;:&lt;id&gt;:&lt;data&gt;\n"   MQTT (broadcast only): "&lt;id&gt;:&lt;data&gt;\n"</text>
+
+  <path class="edge" d="M 260 74 L 470 140"/>
+  <path class="edge" d="M 440 74 L 545 140"/>
+  <path class="edge" d="M 620 74 L 620 140"/>
+  <path class="edge" d="M 980 74 L 770 140" stroke-dasharray="5 3"/>
+
+  <!-- FIFOs -->
+  <rect class="fifo" x="260" y="270" width="200" height="140" rx="4"/>
+  <text class="ttl" x="360" y="290">tcp_response_fifo</text>
+  <text class="codec" x="360" y="312">char   buf[5120]</text>
+  <text class="codec" x="360" y="328">size_t len  (first free byte)</text>
+  <text class="codec" x="360" y="344">mutex       (one task at a time)</text>
+  <text class="codec" x="360" y="360">data_ready  (binary semaphore)</text>
+  <text class="small" x="360" y="392">"0:11:on_res\n56:12:off_res\n..."</text>
+
+  <rect class="fifo" x="780" y="270" width="200" height="140" rx="4"/>
+  <text class="ttl" x="880" y="290">mqtt_response_fifo</text>
+  <text class="codec" x="880" y="312">char   buf[5120]</text>
+  <text class="codec" x="880" y="328">size_t len  (first free byte)</text>
+  <text class="codec" x="880" y="344">mutex       (one task at a time)</text>
+  <text class="codec" x="880" y="360">data_ready  (unused here)</text>
+  <text class="small" x="880" y="392">"11:on_res\n12:off_res\n..."</text>
+
+  <!-- send_data_to_clients -> FIFOs (enqueue) -->
+  <path class="edge" d="M 460 202 L 380 270"/>
+  <text class="codec" x="330" y="232">response_fifo_push()</text>
+  <text class="small" x="330" y="246">enqueue</text>
+
+  <path class="edge" d="M 780 202 L 860 270"/>
+  <text class="codec" x="935" y="232">response_fifo_push()</text>
+  <text class="small" x="935" y="246">broadcast &amp;&amp; IS_REMOTE_CON_ENABLE</text>
+
+  <!-- Consumers -->
+  <rect class="task" x="10" y="250" width="190" height="190" rx="4"/>
+  <text class="ttl" x="105" y="270">tcp_response_send_task</text>
+  <text class="code" x="20" y="292">response_fifo_wait()</text>
+  <text class="code" x="20" y="307">  // blocks on data_ready</text>
+  <text class="code" x="20" y="322">n = response_fifo_drain()</text>
+  <text class="code" x="20" y="337">  // -> staging, mutex freed</text>
+  <text class="code" x="20" y="352">for each line "&lt;t&gt;:&lt;rest&gt;":</text>
+  <text class="code" x="20" y="367">  t == 0: send rest to all</text>
+  <text class="code" x="20" y="382">  t in client list: send(t)</text>
+  <text class="code" x="20" y="397">  else: drop + log</text>
+  <text class="code" x="20" y="412">client gets "&lt;id&gt;:&lt;data&gt;\n"</text>
+  <text class="small" x="105" y="432">Local Send task (new)</text>
+
+  <rect class="task" x="1040" y="250" width="190" height="190" rx="4"/>
+  <text class="ttl" x="1135" y="270">aws_iot_task</text>
+  <text class="codec" x="1135" y="284">processLoopWithTimeout()</text>
+  <text class="code" x="1048" y="304">if (connected &amp;&amp;</text>
+  <text class="code" x="1048" y="319">    now - last &gt;= period &amp;&amp;</text>
+  <text class="code" x="1048" y="334">    !fifo_is_empty()) {</text>
+  <text class="code" x="1048" y="349">  n = response_fifo_drain()</text>
+  <text class="code" x="1048" y="364">    // -> mqtt_staging[5121]</text>
+  <text class="code" x="1048" y="379">  publishToTopic(topic,</text>
+  <text class="code" x="1048" y="394">    mqtt_staging)  // 1 msg</text>
+  <text class="code" x="1048" y="409">  last = now</text>
+  <text class="code" x="1048" y="424">}  MQTT_ProcessLoop()</text>
+  <text class="small" x="1135" y="452">Remote Send "task" (existing loop)</text>
+
+  <!-- FIFO -> consumer (dequeue) -->
+  <path class="edge" d="M 260 340 L 200 340"/>
+  <text class="small" x="230" y="318">dequeue</text>
+  <text class="small" x="230" y="331">at once</text>
+
+  <path class="edge" d="M 980 340 L 1040 340"/>
+  <text class="small" x="1010" y="304">dequeue</text>
+  <text class="small" x="1010" y="317">every</text>
+  <text class="small" x="1010" y="330">period</text>
+
+  <!-- Notes -->
+  <line x1="20" y1="475" x2="1220" y2="475" stroke="#999" stroke-width="1"/>
+  <text class="note" x="20" y="497">&#8226; Only one task touches <tspan class="notec">buf</tspan>/<tspan class="notec">len</tspan> at a time: every push/drain takes the FIFO mutex. Consumers copy out, release the mutex, then send &#8212; a slow socket or TLS write never blocks a producer.</text>
+  <text class="note" x="20" y="519">&#8226; Full: <tspan class="notec">#define RESPONSE_FIFO_ON_FULL</tspan> = <tspan class="notec">RESPONSE_FIFO_DROP_NEW</tspan> (default, reject new line) or <tspan class="notec">RESPONSE_FIFO_OVERWRITE_OLDEST</tspan> (discard whole lines from the head).</text>
+  <text class="note" x="20" y="541">&#8226; Period: <tspan class="notec">mqtt_response_set_period_ms()</tspan>, clamped 100 ms &#8211; 3600 s, default 1000 ms. Independent of MQTT keep-alive, which <tspan class="notec">MQTT_ProcessLoop()</tspan> handles itself.</text>
+  <text class="note" x="20" y="563">&#8226; Local path has no period: <tspan class="notec">push()</tspan> gives <tspan class="notec">data_ready</tspan>, the send task wakes immediately. Target <tspan class="notec">0</tspan> = every client (lwIP sockets are always &gt; 2). Same <tspan class="notec">response_id</tspan> on TCP and MQTT.</text>
+  <text class="note" x="20" y="585">&#8226; Device Routine (GPIO, ADC, SPI, I2C, &#8230;) is not implemented yet; it will call <tspan class="notec">response_fifo_push()</tspan> on both FIFOs the same way.</text>
+</svg>

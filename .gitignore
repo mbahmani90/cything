@@ -1,0 +1,59 @@
+# Build folder
+/build/
+/build_*/
+/build-*/
+
+# Stray in-source CMake cache (must never be committed; breaks out-of-source configure)
+/CMakeCache.txt
+/CMakeFiles/
+
+# SDK configuration backups
+/sdkconfig.old
+
+# VSCode settings
+/.vscode/
+
+# macOS Finder metadata
+.DS_Store
+
+# Clangd cache
+/.clangd
+
+# Partition table CSV (optional: track if you want version control)
+/partitions.csv
+
+
+# Binary artifacts (ESP-IDF generates .bin, .elf, .map, etc.)
+*.bin
+*.elf
+*.map
+*.hex
+*.img
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+
+# Python cache (if you use Python scripts)
+__pycache__/
+*.pyc
+
+# Per-model claim cert + private key (see main/claim_credentials.cpp.example). Never commit.
+/main/claim_credentials.cpp
+/main/*.pem.h
+
+# Per-channel / per-model config exported by the app (see
+# main/cything_config.cpp.example). Never commit: it is one channel's spec.
+/main/cything_config.cpp
+/main/cything_network_spec.h
+/main/cything_device_params.h
+
+# PlatformIO build output
+/.pio/
+
+# Claude Code local files (skills, agents, project instructions) — never commit
+/.claude/
+CLAUDE.md
+CLAUDE.local.md
+SKILL.md

@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 640" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>UDP discovery (multicast GET_INFO) block diagram</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/>
+    </marker>
+    <marker id="arrowb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a73e8"/>
+    </marker>
+    <style>
+      .box   { fill:#fff; stroke:#333; stroke-width:1.5; }
+      .fn    { fill:#fff8e1; stroke:#333; stroke-width:1.5; }
+      .net   { fill:#f4f4f4; stroke:#333; stroke-width:1.5; }
+      .task  { fill:#e8f0fe; stroke:#333; stroke-width:1.5; }
+      .edge  { fill:none; stroke:#333; stroke-width:1.5; marker-end:url(#arrow); }
+      .reply { fill:none; stroke:#1a73e8; stroke-width:1.5; stroke-dasharray:6 4; marker-end:url(#arrowb); }
+      .lbl   { fill:#333; text-anchor:middle; }
+      .ttl   { fill:#333; text-anchor:middle; font-weight:bold; font-size:12px; font-family:Menlo, Consolas, monospace; }
+      .code  { fill:#333; font-size:10.5px; font-family:Menlo, Consolas, monospace; }
+      .codec { fill:#333; font-size:10.5px; font-family:Menlo, Consolas, monospace; text-anchor:middle; }
+      .small { fill:#555; font-size:11px; text-anchor:middle; }
+      .note  { fill:#333; font-size:12px; }
+      .noteb { fill:#1a73e8; font-size:10px; font-family:Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect width="1240" height="640" fill="#fff"/>
+
+  <!-- Scanner -->
+  <rect class="box" x="30" y="280" width="170" height="70" rx="4"/>
+  <text class="lbl" x="115" y="305">Phone app / scanner</text>
+  <text class="small" x="115" y="322">one datagram, then</text>
+  <text class="small" x="115" y="337">collects the replies</text>
+
+  <!-- Multicast datagram -->
+  <rect class="net" x="260" y="255" width="230" height="120" rx="4"/>
+  <text class="ttl" x="375" y="275">"GET_INFO"  (SCAN_COMMAND)</text>
+  <text class="codec" x="375" y="298">IPv4  232.10.11.12 : 1234</text>
+  <text class="codec" x="375" y="314">IPv6  [FF02::FC]   : 1234</text>
+  <text class="codec" x="375" y="330">TTL / hops = 20 (MULTICAST_TTL)</text>
+  <text class="small" x="375" y="352">plain unicast to &lt;device-ip&gt;:1234</text>
+  <text class="small" x="375" y="366">reaches the same socket</text>
+
+  <path class="edge" d="M 200 315 L 260 315"/>
+
+  <!-- Device 1: expanded pipeline -->
+  <rect class="task" x="560" y="30" width="650" height="440" rx="6"/>
+  <text class="ttl" x="885" y="50">Device 1 — udp_server_task  (main/udp_socket/udp_server.c)</text>
+
+  <rect class="fn" x="600" y="65" width="570" height="60" rx="4"/>
+  <text class="ttl" x="885" y="82">create_udp_socket()</text>
+  <text class="codec" x="885" y="98">socket(PF_INET6, SOCK_DGRAM) · SO_REUSEADDR · IPV6_V6ONLY=0 · bind [::]:UDP_PORT</text>
+  <text class="codec" x="885" y="113">IPV6_MULTICAST_IF = STA netif · join FF02::FC (IPv6) + 232.10.11.12 (IPv4)</text>
+
+  <rect class="box" x="600" y="145" width="570" height="50" rx="4"/>
+  <text class="ttl" x="885" y="163">recvfrom(sock, rx_buffer[128], &amp;source_addr)   ⏳ blocks forever</text>
+  <text class="codec" x="885" y="181">source_addr = sender (IPv4 via v4-mapped IPv6, or native IPv6)</text>
+
+  <rect class="fn" x="600" y="215" width="570" height="50" rx="4"/>
+  <text class="ttl" x="885" y="233">processData(rx_buffer, len, reply, sizeof reply)</text>
+  <text class="codec" x="885" y="251">memcmp(rx_buffer, "GET_INFO", SCAN_COMMAND_LEN)  →  0 = no reply, else length</text>
+
+  <rect class="fn" x="600" y="285" width="570" height="66" rx="4"/>
+  <text class="ttl" x="885" y="303">udp_get_info_response(reply[UDP_REPLY_MAX = 512])</text>
+  <text class="codec" x="885" y="321">snprintf 9-field CSV: ip, sourceTerminalId, deviceName, deviceType, deviceId,</text>
+  <text class="codec" x="885" y="336">provisionState, firmwareVersion, hardwareVersion, provisioningCaps</text>
+
+  <rect class="box" x="600" y="371" width="570" height="50" rx="4"/>
+  <text class="ttl" x="885" y="389">sendto(sock, reply, reply_len, &amp;source_addr)</text>
+  <text class="codec" x="885" y="407">unicast back to the sender — never to the multicast group</text>
+
+  <!-- pipeline arrows -->
+  <path class="edge" d="M 885 125 L 885 145"/>
+  <path class="edge" d="M 885 195 L 885 215"/>
+  <path class="edge" d="M 885 265 L 885 285"/>
+  <path class="edge" d="M 885 351 L 885 371"/>
+
+  <!-- loop back: after sendto / no reply -> recvfrom -->
+  <path class="edge" d="M 1170 396 L 1188 396 L 1188 170 L 1170 170"/>
+  <text class="code" x="1201" y="283" transform="rotate(-90 1201 283)" text-anchor="middle">loop: next datagram</text>
+  <text class="small" x="1085" y="440">reply_len == 0 (not GET_INFO) → straight back to recvfrom</text>
+  <text class="small" x="740" y="440">recvfrom / sendto error → close, recreate socket (1 s back-off on failure)</text>
+  <text class="small" x="885" y="458">after every datagram: CY_LOGI stack high-water mark (UDP_DB)</text>
+
+  <!-- Other devices -->
+  <rect class="task" x="560" y="500" width="300" height="50" rx="6" stroke-dasharray="5 3"/>
+  <text class="lbl" x="710" y="522">Device 2</text>
+  <text class="small" x="710" y="538">same task, own unicast reply</text>
+
+  <rect class="task" x="560" y="570" width="300" height="50" rx="6" stroke-dasharray="5 3"/>
+  <text class="lbl" x="710" y="592">Device N</text>
+  <text class="small" x="710" y="608">same task, own unicast reply</text>
+
+  <!-- Multicast fan-out -->
+  <path class="edge" d="M 490 300 L 600 170"/>
+  <path class="edge" d="M 490 320 L 560 525"/>
+  <path class="edge" d="M 490 335 L 560 595"/>
+  <text class="note" x="262" y="232">multicast: every group member</text>
+  <text class="note" x="262" y="246">gets the same datagram</text>
+
+  <!-- Unicast replies back to the scanner -->
+  <path class="reply" d="M 600 405 L 100 405 L 100 350"/>
+  <path class="reply" d="M 560 540 L 115 540 L 115 350"/>
+  <path class="reply" d="M 560 610 L 130 610 L 130 350"/>
+  <text class="noteb" x="150" y="398">192.168.1.42,,dev1,devtype1,,unprovisioned,1.0,1.0,claim</text>
+  <text class="noteb" x="150" y="533">192.168.1.57,&lt;termId&gt;,dev1,devtype1,&lt;devId&gt;,claimed,…</text>
+  <text class="noteb" x="150" y="603">…</text>
+
+  <!-- Legend -->
+  <path class="edge" d="M 900 585 L 940 585"/>
+  <text class="note" x="948" y="589">multicast / unicast GET_INFO request</text>
+  <path class="reply" d="M 900 610 L 940 610"/>
+  <text class="note" x="948" y="614">unicast CSV reply to source_addr:port</text>
+</svg>

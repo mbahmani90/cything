@@ -1,0 +1,196 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 700" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>Wi-Fi pairing block diagram</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b3261e"/>
+    </marker>
+    <style>
+      .box   { fill:#fff; stroke:#333; stroke-width:1.5; }
+      .fn    { fill:#fff8e1; stroke:#333; stroke-width:1.5; }
+      .fifo  { fill:#f4f4f4; stroke:#333; stroke-width:1.5; }
+      .task  { fill:#e8f0fe; stroke:#333; stroke-width:1.5; }
+      .store { fill:#e6f4ea; stroke:#333; stroke-width:1.5; }
+      .state { fill:#fff; stroke:#333; stroke-width:1.2; }
+      .edge  { fill:none; stroke:#333; stroke-width:1.5; marker-end:url(#arrow); }
+      .edge2 { fill:none; stroke:#333; stroke-width:1.5; marker-end:url(#arrow); stroke-dasharray:5 4; }
+      .edger { fill:none; stroke:#b3261e; stroke-width:1.5; marker-end:url(#arrow-red); stroke-dasharray:5 4; }
+      .frame { fill:none; stroke:#888; stroke-width:1.2; stroke-dasharray:6 5; }
+      .lbl   { fill:#333; text-anchor:middle; }
+      .ttl   { fill:#333; text-anchor:middle; font-weight:bold; font-size:12px; font-family:Menlo, Consolas, monospace; }
+      .code  { fill:#333; font-size:10.5px; font-family:Menlo, Consolas, monospace; }
+      .codec { fill:#333; font-size:10.5px; font-family:Menlo, Consolas, monospace; text-anchor:middle; }
+      .coder { fill:#b3261e; font-size:10.5px; font-family:Menlo, Consolas, monospace; text-anchor:middle; }
+      .small { fill:#555; font-size:11px; text-anchor:middle; }
+      .note  { fill:#333; font-size:12px; }
+      .notec { fill:#333; font-size:12px; font-family:Menlo, Consolas, monospace; }
+      .hdr   { fill:#555; font-size:12px; font-weight:bold; }
+    </style>
+  </defs>
+
+  <rect width="1240" height="700" fill="#fff"/>
+
+  <!-- ================= Device frame ================= -->
+  <rect class="frame" x="230" y="20" width="990" height="600" rx="8"/>
+  <text class="hdr" x="245" y="40">Device — AP mode, SSID Cy_WiFi_&lt;MAC[3..5]&gt;, 192.168.4.1, TCP :1234</text>
+
+  <!-- ================= Mobile app ================= -->
+  <rect class="box" x="30" y="255" width="160" height="70" rx="4"/>
+  <text class="lbl" x="110" y="283">Mobile app</text>
+  <text class="small" x="110" y="300">joined the device's AP</text>
+  <text class="small" x="110" y="314">TCP client on :1234</text>
+
+  <!-- ================= Row 1: receive path ================= -->
+  <rect class="task" x="260" y="70" width="170" height="50" rx="4"/>
+  <text class="ttl" x="345" y="91">tcp_server_task</text>
+  <text class="small" x="345" y="108">listen / accept</text>
+
+  <rect class="task" x="470" y="70" width="180" height="50" rx="4"/>
+  <text class="ttl" x="560" y="91">tcp_client_recv_task</text>
+  <text class="small" x="560" y="108">one per client, splits on "\n"</text>
+
+  <rect class="fn" x="690" y="70" width="180" height="50" rx="4"/>
+  <text class="ttl" x="780" y="91">tcp_dispatch_line</text>
+  <text class="small" x="780" y="108">tcp_command.c dispatcher</text>
+
+  <path class="edge" d="M 430 95 L 468 95"/>
+  <text class="small" x="449" y="88">sock</text>
+  <path class="edge" d="M 650 95 L 688 95"/>
+  <text class="small" x="669" y="88">line</text>
+
+  <!-- app -> tcp server: request lines -->
+  <path class="edge" d="M 190 275 L 210 275 L 210 95 L 258 95"/>
+  <text class="code" x="204" y="150" text-anchor="end">StartP\n</text>
+  <text class="code" x="204" y="166" text-anchor="end">ssid:&lt;ssid&gt;\n</text>
+  <text class="code" x="204" y="182" text-anchor="end">pass:&lt;pw&gt;\n</text>
+  <text class="code" x="204" y="198" text-anchor="end">FinishP\n</text>
+
+  <!-- ================= State machine ================= -->
+  <rect class="fn" x="910" y="60" width="290" height="300" rx="4"/>
+  <text class="ttl" x="1055" y="80">pairing state machine</text>
+  <text class="small" x="1055" y="95">pairing.c statics: pairing_step, temp_ssid, temp_password</text>
+
+  <rect class="state" x="960" y="110" width="180" height="30" rx="15"/>
+  <text class="codec" x="1050" y="129">0 START_PAIRING_IND</text>
+
+  <rect class="state" x="960" y="170" width="180" height="30" rx="15"/>
+  <text class="codec" x="1050" y="189">1 SET_ROUTER_SSID_IND</text>
+
+  <rect class="state" x="960" y="230" width="180" height="30" rx="15"/>
+  <text class="codec" x="1050" y="249">2 SET_ROUTER_PASS_IND</text>
+
+  <rect class="state" x="960" y="290" width="180" height="30" rx="15"/>
+  <text class="codec" x="1050" y="309">3 FINISH_PAIRING_IND</text>
+
+  <path class="edge" d="M 1050 140 L 1050 168"/>
+  <text class="code" x="1058" y="158">StartP</text>
+  <path class="edge" d="M 1050 200 L 1050 228"/>
+  <text class="code" x="1058" y="218">ssid:</text>
+  <path class="edge" d="M 1050 260 L 1050 288"/>
+  <text class="code" x="1058" y="278">pass:</text>
+
+  <!-- FinishP: back to 0 (left side loop) -->
+  <path class="edge" d="M 960 305 L 935 305 L 935 125 L 958 125"/>
+  <text class="code" x="915" y="215" transform="rotate(-90 915 215)">FinishP → 0</text>
+
+  <!-- StartP accepted at any step (right side) -->
+  <path class="edge2" d="M 1140 185 L 1170 185 L 1170 125 L 1142 125"/>
+  <path class="edge2" d="M 1140 245 L 1170 245 L 1170 190"/>
+  <path class="edge2" d="M 1140 305 L 1170 305 L 1170 250"/>
+  <text class="small" x="1185" y="210" transform="rotate(90 1185 210)">StartP at any step → 1</text>
+
+  <!-- dispatcher -> state machine -->
+  <path class="edge" d="M 870 95 L 908 95"/>
+
+  <!-- ================= Timer ================= -->
+  <rect class="box" x="910" y="390" width="290" height="70" rx="4"/>
+  <text class="ttl" x="1055" y="411">pairing timer</text>
+  <text class="small" x="1055" y="427">FreeRTOS one-shot, PAIRING_TIMEOUT_MS = 6 s</text>
+  <text class="small" x="1055" y="442">pairing_touch() re-arms · pairing_done() stops</text>
+
+  <path class="edge" d="M 1000 360 L 1000 388"/>
+  <text class="small" x="965" y="377">each step</text>
+  <path class="edger" d="M 1110 388 L 1110 362"/>
+  <text class="coder" x="1150" y="377">expiry → 0</text>
+
+  <!-- ================= Row 2: reply path ================= -->
+  <rect class="fn" x="470" y="260" width="180" height="50" rx="4"/>
+  <text class="ttl" x="560" y="281">send_raw_to_client</text>
+  <text class="small" x="560" y="298">"&lt;sock&gt;:ACK\n", no id</text>
+
+  <rect class="fifo" x="690" y="260" width="180" height="50" rx="4"/>
+  <text class="ttl" x="780" y="281">tcp_response_fifo</text>
+  <text class="small" x="780" y="298">5 KB, shared with on_cmd replies</text>
+
+  <rect class="task" x="260" y="260" width="170" height="50" rx="4"/>
+  <text class="ttl" x="345" y="281">tcp_response_send_task</text>
+  <text class="small" x="345" y="298">strips "&lt;sock&gt;:", send()</text>
+
+  <!-- dispatcher -> send_raw_to_client (down) -->
+  <path class="edge" d="M 780 120 L 780 170 L 560 170 L 560 258"/>
+  <text class="small" x="670" y="163">each accepted step</text>
+
+  <path class="edge" d="M 650 285 L 688 285"/>
+  <text class="small" x="669" y="278">push</text>
+  <path class="edge" d="M 690 300 L 670 300 L 670 330 L 345 330 L 345 312"/>
+  <text class="small" x="510" y="345">wakes on push, drains</text>
+
+  <!-- send task -> app: ACK -->
+  <path class="edge" d="M 260 285 L 192 285"/>
+  <text class="code" x="204" y="305" text-anchor="end">ACK\n</text>
+
+  <!-- ================= Row 3: finish path ================= -->
+  <rect class="fn" x="260" y="500" width="220" height="60" rx="4"/>
+  <text class="ttl" x="370" y="522">flash_store_wifi_router_info</text>
+  <text class="small" x="370" y="538">ssid, password, WIFI_STA_MODE</text>
+  <text class="small" x="370" y="552">memory_handler/flash_wifi_info_handler.c</text>
+
+  <rect class="store" x="520" y="500" width="180" height="60" rx="4"/>
+  <text class="ttl" x="610" y="522">wifi_info partition</text>
+  <text class="small" x="610" y="538">router SSID + password</text>
+  <text class="small" x="610" y="552">mode = "WiMStA"</text>
+
+  <rect class="box" x="740" y="500" width="170" height="60" rx="4"/>
+  <text class="ttl" x="825" y="522">reboot_after_ms(1000)</text>
+  <text class="small" x="825" y="538">esp_timer one-shot: 1 s grace</text>
+  <text class="small" x="825" y="552">for the ACK, then esp_restart()</text>
+
+  <rect class="box" x="950" y="500" width="250" height="60" rx="4"/>
+  <text class="lbl" x="1075" y="522">Reboot → station mode</text>
+  <text class="small" x="1075" y="538">app_main reads WiMStA → wifi_init_sta</text>
+  <text class="small" x="1075" y="552">device joins the router; LAN discovery via UDP</text>
+
+  <!-- FinishP from state machine down to finish path -->
+  <path class="edge" d="M 960 320 L 900 320 L 900 470 L 370 470 L 370 498"/>
+  <text class="small" x="640" y="464">FinishP at step 3 (after ACK + pairing_done)</text>
+
+  <path class="edge" d="M 480 530 L 518 530"/>
+  <text class="small" x="499" y="523">write</text>
+  <path class="edge" d="M 700 530 L 738 530"/>
+  <text class="small" x="719" y="523">arm</text>
+  <path class="edge" d="M 910 530 L 948 530"/>
+
+  <!-- ================= How the device gets into AP mode ================= -->
+  <rect class="box" x="30" y="30" width="160" height="90" rx="4"/>
+  <text class="lbl" x="110" y="52">Entering AP mode</text>
+  <text class="small" x="110" y="70">first boot, or 5 power</text>
+  <text class="small" x="110" y="84">cycles within 2 s →</text>
+  <text class="small" x="110" y="98">reset_handler() stores</text>
+  <text class="small" x="110" y="112">mode "WiMAcP" + reboots</text>
+
+  <!-- ================= Legend ================= -->
+  <rect class="task" x="260" y="645" width="22" height="14"/>
+  <text class="note" x="288" y="656">FreeRTOS task</text>
+  <rect class="fn" x="400" y="645" width="22" height="14"/>
+  <text class="note" x="428" y="656">function / state</text>
+  <rect class="fifo" x="540" y="645" width="22" height="14"/>
+  <text class="note" x="568" y="656">FIFO buffer</text>
+  <rect class="store" x="660" y="645" width="22" height="14"/>
+  <text class="note" x="688" y="656">flash storage</text>
+  <line x1="790" y1="652" x2="830" y2="652" class="edge2"/>
+  <text class="note" x="838" y="656">restart from any step</text>
+  <line x1="990" y1="652" x2="1030" y2="652" class="edger"/>
+  <text class="note" x="1038" y="656">timeout</text>
+</svg>

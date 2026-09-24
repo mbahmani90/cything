@@ -1,0 +1,47 @@
+/*
+ * Per-channel / per-model configuration for the ESP-IDF build.
+ *
+ *   1. copy this file to main/cything_config.cpp (git-ignored);
+ *   2. put cything_network_spec.h and cything_device_params.h — exported from
+ *      the phone app, a device model's "Download firmware sketch" — next to it;
+ *   3. idf.py reconfigure && idf.py build.
+ *
+ * Leave it out and the library's weak defaults (src/device_config/cy_config.c)
+ * apply, i.e. the firmware behaves exactly as it did before these values became
+ * configurable.
+ *
+ * C++ for symmetry with claim_credentials.cpp. The CyThingEsp32.h include is
+ * load-bearing: in C++ a namespace-scope `const` has internal linkage unless a
+ * prior extern declaration is in scope, so without it these definitions are
+ * silently ignored and the weak defaults win. Verify with:
+ *   xtensa-esp32-elf-nm build/<project>.elf | grep cy_tcp_port
+ * A strong definition shows as D or R; the library's weak default as V or W.
+ *
+ * The Arduino equivalent is examples/Basic/cything_config.ino — the same symbol
+ * list, and the app generates a copy of it into every sketch bundle. All three
+ * must stay in step.
+ */
+#include "CyThingEsp32.h"
+#include "cything_network_spec.h"
+#include "cything_device_params.h"
+
+const char     cy_ap_ssid_prefix[]     = CYTHING_AP_SSID_PREFIX;
+const char     cy_router_ssid_prefix[] = CYTHING_ROUTER_SSID_PREFIX;
+const char     cy_router_pass_prefix[] = CYTHING_ROUTER_PASS_PREFIX;
+const uint16_t cy_tcp_port             = CYTHING_TCP_PORT;
+const uint16_t cy_udp_port             = CYTHING_UDP_PORT;
+const char     cy_scan_command[]       = CYTHING_SCAN_COMMAND;
+const char     cy_scan_response[]      = CYTHING_SCAN_RESPONSE;
+const char     cy_multicast_ipv4[]     = CYTHING_MULTICAST_IPV4;
+const uint8_t  cy_ble_base_uuid128[16] = { CYTHING_BLE_BASE_UUID128_BYTES };
+
+const char cy_device_name[]      = CYTHING_DEVICE_NAME;
+const char cy_device_type[]      = CYTHING_DEVICE_TYPE;
+const char cy_hardware_version[] = CYTHING_HARDWARE_VERSION;
+const char cy_major_unique_id[]  = CYTHING_MAJOR_UNIQUE_ID;
+const char cy_ota_username[]     = CYTHING_OTA_USERNAME;
+const char cy_ota_password[]     = CYTHING_OTA_PASSWORD;
+
+/* The firmware repo owns the version string (scripts/release.sh rewrites
+ * FIRMWARE_VERSION). Uncomment to let the model's value win instead:
+ * const char cy_firmware_version[] = CYTHING_FIRMWARE_VERSION; */
