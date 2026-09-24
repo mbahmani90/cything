@@ -378,6 +378,36 @@ git submodule is the same distribution model already used for PlatformIO
 above, so it needs no new mechanism to be usable today; registry publishing
 is a separate follow-up.
 
+### Registry publishing
+
+`components/cything/idf_component.yml` is the manifest; `components/cything/`
+itself still points at `../../src` (unchanged, for the reasons in §4), but
+the registry distributes each component as a self-contained archive — it
+packs only what's under the directory it's given, nothing outside it.
+`scripts/pack_component.sh` bridges the gap: it assembles a throwaway,
+self-contained copy (`src/` copied in, the `CMakeLists.txt` path rewritten to
+local) in a scratch directory, runs `compote component pack` against *that*,
+and deletes the scratch copy — nothing about the committed layout changes.
+
+```bash
+scripts/pack_component.sh 1.0.0     # -> dist/pack/cything_1.0.0.tgz
+```
+
+Verified (2026-09-24): the packed archive resolves and builds through the
+*real* component-manager dependency path — a consumer `main/idf_component.yml`
+with a `path:` dependency pointing at the extracted archive, `idf.py build`,
+full manifest parse + `dependencies.lock` + build, no shortcuts. One naming
+detail this surfaced: once actually published and pulled via
+`idf.py add-dependency mbahmani90/cything`, the component manager downloads
+it into `managed_components/mbahmani90__cything/`, so a consumer's
+`main/CMakeLists.txt` needs `PRIV_REQUIRES mbahmani90__cything` (the
+namespaced form), not `PRIV_REQUIRES cything`.
+
+To actually publish: `compote registry login` (needs an Espressif account —
+not something a git clone or this script can do for you), then
+`compote component upload --namespace mbahmani90 --name cything --archive
+dist/pack/cything_1.0.0.tgz`. Not done yet.
+
 Do not use `WiFi.h` in the sketch; the library owns the Wi-Fi driver.
 
 ## 6. Chips

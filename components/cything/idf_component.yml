@@ -1,0 +1,23 @@
+name: cything
+description: >-
+  ESP32 smart-device firmware as a library: Wi-Fi pairing over BLE or soft-AP,
+  TCP/UDP local control, AWS IoT MQTT with per-device certificate
+  provisioning, HTTPS OTA. Call cything_begin() and implement two command
+  hooks — see CyThingEsp32.h.
+url: "https://github.com/mbahmani90/cything"
+repository: "https://github.com/mbahmani90/cything.git"
+documentation: "https://github.com/mbahmani90/cything/blob/main/doc/cy_thing_lib.md"
+issues: "https://github.com/mbahmani90/cything/issues"
+license: "MIT"
+targets:
+  - esp32
+  - esp32s3
+  - esp32c3
+tags:
+  - iot
+  - mqtt
+  - aws
+  - ota
+  - provisioning
+  - ble
+  - wifi
