@@ -46,6 +46,7 @@ trap 'rm -rf "$STAGE"' EXIT
 cp -R src "$STAGE/src"
 cp components/cything/Kconfig.projbuild "$STAGE/Kconfig.projbuild"
 cp components/cything/idf_component.yml "$STAGE/idf_component.yml"
+cp -R components/cything/examples "$STAGE/examples"
 sed 's#\${CMAKE_CURRENT_LIST_DIR}/../../src#${CMAKE_CURRENT_LIST_DIR}/src#' \
     components/cything/CMakeLists.txt > "$STAGE/CMakeLists.txt"
 grep -q '\${CMAKE_CURRENT_LIST_DIR}/src' "$STAGE/CMakeLists.txt" || {

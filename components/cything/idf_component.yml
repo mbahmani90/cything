@@ -1,4 +1,5 @@
 name: cything
+version: "1.0.0"
 description: >-
   ESP32 smart-device firmware as a library: Wi-Fi pairing over BLE or soft-AP,
   TCP/UDP local control, AWS IoT MQTT with per-device certificate

@@ -1,0 +1,5 @@
+## IDF Component Manager Manifest File
+dependencies:
+  mbahmani90/cything:
+    version: "^1.0.0"
+    override_path: "../../.."

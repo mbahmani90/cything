@@ -55,6 +55,13 @@ __pycache__/
 # scripts/pack_component.sh output (registry archive) — scratch, rebuilt on demand
 /dist/
 
+# Bundled example under components/cything/examples/ is itself a buildable
+# IDF project — ignore its own build output the same way as the root one.
+components/cything/examples/*/build/
+components/cything/examples/*/sdkconfig
+components/cything/examples/*/dependencies.lock
+components/cything/examples/*/managed_components/
+
 # Claude Code local files (skills, agents, project instructions) — never commit
 /.claude/
 CLAUDE.md
