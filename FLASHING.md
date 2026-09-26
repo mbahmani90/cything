@@ -84,10 +84,11 @@ The per-model claim certificate + RSA key are **identical for every unit of a
 device model** and are linked in as C strings, not `.pem` files: the PEMs are
 pasted verbatim between the marker lines of `claim_cert.pem.h` / `claim_key.pem.h`,
 which `claim_credentials.cpp` / `.ino` `#include`s into `claim_cert_pem` /
-`claim_key_pem` (`aws/claim_credentials.h`). Under ESP-IDF that means a
-git-ignored `main/claim_credentials.cpp` (copy the `.cpp.example`) plus the two
-`.pem.h` next to it, then `idf.py reconfigure`. Empty = the claim step is
-skipped. Get the PEMs from the app's *device model → Claim certificate → Add*
+`claim_key_pem` (`aws/claim_credentials.h`). Under ESP-IDF, fill in the two
+`.pem.h` templates in `cert/` at the project root (or point `CYTHING_CLAIM_DIR`
+at a directory outside the repo) and `idf.py build`; the `cything` component
+compiles them in itself. While they hold the `...` placeholder the claim step
+is skipped. Get the PEMs from the app's *device model → Claim certificate → Add*
 (one-time download). **Never commit a real key.**
 
 Easier: the app's *device model → Download firmware sketch* hands you a sketch

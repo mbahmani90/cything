@@ -17,8 +17,10 @@
  * To enable the claim step the application defines both as NUL-terminated PEM
  * strings. The intended form is a claim_credentials.cpp/.ino that #includes
  * two raw-string files, claim_cert.pem.h and claim_key.pem.h, into which the
- * PEMs are pasted verbatim — see examples/Basic/ and, for ESP-IDF, main/
- * claim_credentials.cpp.example. NEVER commit the real PEMs.
+ * PEMs are pasted verbatim — see examples/Basic/. Under ESP-IDF the cything
+ * component does this itself from <project>/cert/ (or CYTHING_CLAIM_DIR):
+ * components/cything/claim_credentials_cert_dir.cpp. NEVER commit the real
+ * PEMs.
  */
 extern const char claim_cert_pem[];
 extern const char claim_key_pem[];

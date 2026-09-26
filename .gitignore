@@ -39,9 +39,12 @@
 __pycache__/
 *.pyc
 
-# Per-model claim cert + private key (see main/claim_credentials.cpp.example). Never commit.
-/main/claim_credentials.cpp
-/main/*.pem.h
+# Per-model claim cert + private key. Never commit a real key. The two
+# placeholder templates in each cert/ are tracked on purpose (added with
+# `git add -f`), so git still shows them as modified once filled in: run
+# `git update-index --skip-worktree cert/*.pem.h` after cloning.
+/cert/
+components/cything/examples/*/cert/
 
 # Per-channel / per-model config exported by the app (see
 # main/cything_config.cpp.example). Never commit: it is one channel's spec.
@@ -61,6 +64,7 @@ components/cything/examples/*/build/
 components/cything/examples/*/sdkconfig
 components/cything/examples/*/dependencies.lock
 components/cything/examples/*/managed_components/
+components/cything/examples/*/.vscode/
 
 # Claude Code local files (skills, agents, project instructions) — never commit
 /.claude/

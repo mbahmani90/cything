@@ -10,7 +10,7 @@
  * apply, i.e. the firmware behaves exactly as it did before these values became
  * configurable.
  *
- * C++ for symmetry with claim_credentials.cpp. The CyThingEsp32.h include is
+ * C++ for symmetry with the claim .pem.h raw strings. The CyThingEsp32.h include is
  * load-bearing: in C++ a namespace-scope `const` has internal linkage unless a
  * prior extern declaration is in scope, so without it these definitions are
  * silently ignored and the weak defaults win. Verify with:

@@ -136,7 +136,7 @@ thing. The table below is about consuming the library, in either style:
 | `sdkconfig` | n/a — Arduino core is precompiled | n/a with `framework = arduino` | copy this repo's [sdkconfig.defaults](sdkconfig.defaults) into your project root — **not optional**: BLE (`CONFIG_BT_NIMBLE_ENABLED`), the partition table, and mbedTLS's CSR support all come from it |
 | Partition table | copy `partitions/cything-<size>.csv` into the sketch folder as `partitions.csv`; set *Tools → Flash Size* to match | `board_build.partitions` + `board_upload.flash_size` (envs in `platformio.ini`) | copy `partitions/cything-<size>.csv` in as your own `partitions.csv` |
 | Your commands | the two hooks in the sketch | same | your own `main/app_main.c`, shaped like [main/app_main.c](main/app_main.c) in this repo |
-| Claim cert/key (optional) | paste the PEMs into the `claim_cert.pem.h` / `claim_key.pem.h` tabs — see below | same three files under `src/` | same `claim_credentials.cpp` pattern as this repo's `main/` (see `main/claim_credentials.cpp.example`) |
+| Claim cert/key (optional) | paste the PEMs into the `claim_cert.pem.h` / `claim_key.pem.h` tabs — see below | same three files under `src/` | fill in the two `.pem.h` files in `cert/` at the project root; the `cything` component picks them up, no `main/` change (see [components/cything/README.md](components/cything/README.md)) |
 | Channel/model config (optional) | the `cything_config.ino` + `cything_network_spec.h` + `cything_device_params.h` tabs, all three already in the sketch the app exports — see below | same three files under `src/` | same `cything_config.cpp` pattern (see `main/cything_config.cpp.example`) |
 
 ### Channel and model configuration (optional)
@@ -206,9 +206,11 @@ step is simply skipped. Keep the `.pem.h` files out of git.
 
 (Why `.pem.h` and not `.pem`: the Arduino IDE only carries `.h`/`.c`/`.cpp`/
 `.ino` files into the build, so the file is a C++ raw string with a `.h`
-name. PlatformIO: same three files under `src/`. ESP-IDF: copy
-`main/claim_credentials.cpp.example` to `main/claim_credentials.cpp`, put the
-two `.pem.h` files next to it, `idf.py reconfigure`.)
+name. PlatformIO: same three files under `src/`. ESP-IDF: fill in
+`cert/claim_cert.pem.h` / `cert/claim_key.pem.h` at the project root
+(templates already there) and `idf.py build`; or point `CYTHING_CLAIM_DIR`
+at a directory outside the repo — see
+[components/cything/README.md](components/cything/README.md).)
 
 Default partition table is 4 MB, which runs on every ESP32; 8 MB and 16 MB
 variants are in [partitions/](partitions/). Tested on ESP32; compiles for
