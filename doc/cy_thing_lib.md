@@ -226,9 +226,14 @@ IDF 6.0.2 and 5.5.5.
   the build), which a `claim_credentials.ino` / `.cpp` `#include`s into the
   two arrays. Because an empty template still holds a newline, "present" is
   `claim_credentials_present()` = both contain `-----BEGIN`, not
-  `[0] != '\0'`. Under ESP-IDF: git-ignored `main/claim_credentials.cpp`
-  (template `.cpp.example`) + the two `.pem.h`, `idf.py reconfigure` once.
-  Verified with `nm`: `V` (weak) without, `D` with.
+  `[0] != '\0'`. Under ESP-IDF the `cything` component does it itself:
+  its CMakeLists looks in `<project>/cert/` (or `CYTHING_CLAIM_DIR`) and,
+  when both `.pem.h` files hold a PEM that is not the `...` placeholder,
+  compiles `components/cything/claim_credentials_cert_dir.cpp` with their
+  paths passed in as macros. It lives outside `src/` so Arduino/PlatformIO
+  never compile it. The files are `CMAKE_CONFIGURE_DEPENDS`, so filling them
+  in needs no manual reconfigure. Verified with `nm`: `V` (weak) without,
+  `D` with.
 - **Channel spec as symbols, not macros.** `TCP_PORT`, `UDP_PORT`,
   `SCAN_COMMAND`, `MULTICAST_IPV4_ADDR`, `ESP_AP_WIFI_SSID_PREFIX`,
   `DEVICE_NAME`/`DEVICE_TYPE` and the BLE base UUID moved from `#define` to
@@ -253,8 +258,10 @@ IDF 6.0.2 and 5.5.5.
   three fixes: ESP-IDF — the `cything` component (which owns every weak
   default: the two hooks, `app_command_is_public`, `claim_cert_pem`/
   `claim_key_pem`, the `cy_config.c` channel-spec symbols) is registered with
-  `WHOLE_ARCHIVE`, forcing all of it into the link so the application's
-  (`main`'s) strong definitions always win regardless of extraction order —
+  `WHOLE_ARCHIVE`, forcing all of it into the link, and so is `main`: an
+  override file there (`cything_config.cpp`) defines
+  only symbols the weak defaults already satisfy, so nothing would ever pull
+  it out of `libmain.a` — `main`'s strong definitions then always win —
   verified both ways with `nm` on the linked `.elf` (`T`/`D` for `main`'s
   overrides, `V` for anything `main` leaves unoverridden) on IDF 6.0.2 and
   5.5.5; PlatformIO — `library.json` sets `"libArchive": false` (PlatformIO's
@@ -365,7 +372,7 @@ subject to the three rules in §1.
 | `sdkconfig` | n/a — Arduino core is precompiled | n/a with `framework = arduino` | **copy this repo's [sdkconfig.defaults](../sdkconfig.defaults) into the consumer's own project root.** It is not optional: `CONFIG_BT_ENABLED` / `CONFIG_BT_NIMBLE_ENABLED` (pairing needs NimBLE — without them IDF's `bt` component doesn't even expose `esp_bt.h`, a hard compile error in `src/ble/`), `CONFIG_PARTITION_TABLE_CUSTOM*` (points at `partitions.csv`), `CONFIG_MBEDTLS_X509_CREATE_C` (provisioning's CSR). Confirmed by building a real standalone project against `components/cything` |
 | Board package | Boards Manager → *esp32 by Espressif Systems* 3.3.x | `platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.311/platform-espressif32.zip`, `framework = arduino` | whatever `idf.py set-target` the consumer already uses — nothing CyThing-specific |
 | Partition table | copy `partitions/cything-<size>.csv` into the sketch folder as `partitions.csv` (4 MB unless you know your module is bigger) and set *Tools → Flash Size* to match | `board_build.partitions = cything-<size>.csv`, `board_upload.flash_size = <size>` | copy `partitions/cything-<size>.csv` in as the consumer's own `partitions.csv`, same as this repo's root `CMakeLists.txt` (`set(PARTITION_TABLE_CSV "partitions.csv")`) |
-| Claim cert/key (optional) | paste the PEMs verbatim into the `claim_cert.pem.h` / `claim_key.pem.h` tabs (C++ raw strings; `claim_credentials.ino` `#include`s them into `claim_cert_pem` / `claim_key_pem`, which `CyThingEsp32.h` declares `extern "C"` — without that a C++ `const` would be file-local and silently ignored); keep the `.pem.h` files out of git | same three files under `src/` | same `claim_credentials.cpp` pattern as this repo's `main/` (see `main/claim_credentials.cpp.example`) |
+| Claim cert/key (optional) | paste the PEMs verbatim into the `claim_cert.pem.h` / `claim_key.pem.h` tabs (C++ raw strings; `claim_credentials.ino` `#include`s them into `claim_cert_pem` / `claim_key_pem`, which `CyThingEsp32.h` declares `extern "C"` — without that a C++ `const` would be file-local and silently ignored); keep the `.pem.h` files out of git | same three files under `src/` | fill in `cert/claim_cert.pem.h` / `cert/claim_key.pem.h` at the project root, or set `CYTHING_CLAIM_DIR`; the `cything` component compiles them in |
 | Update | re-add the ZIP / Library Manager "update" | `pio pkg update`, or bump the tag | `git submodule update` / re-clone, or bump the pinned tag |
 
 The consumer's own `main/` is shaped exactly like this repo's: implement

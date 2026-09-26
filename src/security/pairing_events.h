@@ -10,7 +10,7 @@
  * happened: after ENROLL / REVOKE / RESET the device publishes
  *
  *   topic    <sourceTerminalId>/<deviceType>/<deviceId>/pairing
- *   payload  {"event":"paired"|"unpaired"|"reset","userSub":"…","installId":"…","role":"owner"|"user","at":<unix s>}
+ *   payload  {"event":"paired"|"unpaired"|"reset","userSub":"…","role":"owner"|"user","at":<unix s>}
  *
  * over its own mutual-TLS MQTT connection, so the backend can trust that
  * it is genuine — a phone cannot forge it. Events are queued in NVS until
@@ -30,8 +30,7 @@
 void pairing_events_init(void);
 
 /* Queue one event. Strings may be NULL/empty (RESET carries no identity). */
-void pairing_events_push(const char *event, const char *user_sub,
-                         const char *install_id, const char *role);
+void pairing_events_push(const char *event, const char *user_sub, const char *role);
 
 /* Number of queued events. */
 int  pairing_events_pending(void);

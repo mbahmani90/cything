@@ -3,23 +3,21 @@
 # CyThing library itself is the `cything` component (../components/cything,
 # which compiles ../src) — see doc/cy_thing_lib.md §4/§5.
 
-# Per-model claim cert + key: optional, git-ignored, overrides the library's
-# empty weak defaults (see claim_credentials.cpp.example).
 set(CYTHING_APP_SRCS "app_main.c")
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/claim_credentials.cpp")
-	list(APPEND CYTHING_APP_SRCS "claim_credentials.cpp")
-endif()
-# Same idea for the generated channel/model config (see cything_config.cpp.example);
-# absent, the weak defaults in device_config/cy_config.c apply.
+# Generated channel/model config (see cything_config.cpp.example): optional,
+# overrides the weak defaults in device_config/cy_config.c. (The claim cert +
+# key are not handled here: the cything component picks them up from ../cert/.)
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/cything_config.cpp")
 	list(APPEND CYTHING_APP_SRCS "cything_config.cpp")
 endif()
 
-# No WHOLE_ARCHIVE here: app_main.o is always pulled in (ESP-IDF's startup
-# code calls app_main() unconditionally), so its strong hook definitions
-# always reach the final link. The WHOLE_ARCHIVE side of the override lives
-# on the `cything` component, which owns the weak defaults.
+# WHOLE_ARCHIVE: app_main.o is always pulled in (ESP-IDF's startup code calls
+# app_main() unconditionally), but cything_config.o is not — nothing
+# references a symbol only it defines, because the `cything` component's weak
+# defaults already satisfy every reference. Without this the linker never
+# extracts it from libmain.a and the defaults silently win.
 idf_component_register(SRCS ${CYTHING_APP_SRCS}
 					   INCLUDE_DIRS "."
 					   PRIV_REQUIRES cything
+					   WHOLE_ARCHIVE
 					  )

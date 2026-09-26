@@ -57,6 +57,44 @@ set(CYTHING_SRCS
 	"${CYTHING_SRC}/posix_compat/clock_esp.c"
 	)
 
+# Per-model claim certificate + key (optional). Looked for in the project's
+# cert/ directory, or wherever CYTHING_CLAIM_DIR points (a CMake -D or an
+# environment variable; relative paths are from the project directory), so
+# the real keys can live outside the repo. Both claim_cert.pem.h and
+# claim_key.pem.h must hold a real PEM; the shipped templates' "..."
+# placeholder counts as missing. Without them the empty weak defaults in
+# claim_credentials.c apply and the claim step is skipped.
+idf_build_get_property(cything_project_dir PROJECT_DIR)
+if(DEFINED CYTHING_CLAIM_DIR)
+	set(cything_claim_dir "${CYTHING_CLAIM_DIR}")
+elseif(DEFINED ENV{CYTHING_CLAIM_DIR})
+	set(cything_claim_dir "$ENV{CYTHING_CLAIM_DIR}")
+else()
+	set(cything_claim_dir "${cything_project_dir}/cert")
+endif()
+get_filename_component(cything_claim_dir "${cything_claim_dir}" ABSOLUTE
+	BASE_DIR "${cything_project_dir}")
+set(cything_claim_cert "${cything_claim_dir}/claim_cert.pem.h")
+set(cything_claim_key  "${cything_claim_dir}/claim_key.pem.h")
+
+function(cything_pem_filled file out)
+	set(filled FALSE)
+	if(EXISTS "${file}")
+		file(READ "${file}" pem)
+		if(pem MATCHES "-----BEGIN" AND NOT pem MATCHES "\n[.][.][.]\r?\n")
+			set(filled TRUE)
+		endif()
+	endif()
+	set(${out} ${filled} PARENT_SCOPE)
+endfunction()
+cything_pem_filled("${cything_claim_cert}" cything_cert_filled)
+cything_pem_filled("${cything_claim_key}"  cything_key_filled)
+set(cything_use_claim_dir FALSE)
+if(cything_cert_filled AND cything_key_filled)
+	set(cything_use_claim_dir TRUE)
+	list(APPEND CYTHING_SRCS "${CMAKE_CURRENT_LIST_DIR}/claim_credentials_cert_dir.cpp")
+endif()
+
 # WHOLE_ARCHIVE: the weak default hooks/config (tcp_command.c,
 # aws_iot_handler.c, access_policy.c, claim_credentials.c, cy_config.c) live
 # in this component's archive; the application's strong overrides live in
@@ -74,3 +112,24 @@ idf_component_register(SRCS ${CYTHING_SRCS}
 
 set_source_files_properties("${CYTHING_SRC}/coreMQTT/core_mqtt.c"
 	PROPERTIES COMPILE_FLAGS -Wno-format)
+
+if(NOT CMAKE_BUILD_EARLY_EXPANSION)
+	if(cything_use_claim_dir)
+		message(STATUS "CyThing: claim certificate + key from ${cything_claim_dir}")
+		set_source_files_properties("${CMAKE_CURRENT_LIST_DIR}/claim_credentials_cert_dir.cpp"
+			PROPERTIES COMPILE_DEFINITIONS
+			"CYTHING_CLAIM_CERT_FILE=\"${cything_claim_cert}\";CYTHING_CLAIM_KEY_FILE=\"${cything_claim_key}\"")
+	elseif(cything_cert_filled OR cything_key_filled)
+		message(WARNING "CyThing: only one of claim_cert.pem.h / claim_key.pem.h "
+			"in ${cything_claim_dir} holds a PEM; the claim step is skipped")
+	else()
+		message(STATUS "CyThing: no claim certificate in ${cything_claim_dir}; claim step skipped")
+	endif()
+	# Re-run configure when the PEMs are filled in or edited, or when files are
+	# added to the directory, so detection never needs a manual reconfigure.
+	foreach(f "${cything_claim_dir}" "${cything_claim_cert}" "${cything_claim_key}")
+		if(EXISTS "${f}")
+			set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${f}")
+		endif()
+	endforeach()
+endif()

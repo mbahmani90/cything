@@ -43,7 +43,7 @@ void reset_handler(){
              * password (doc/local-auth.md, "Threat model"). */
             paired_list_clear();
             device_password_clear();
-            pairing_events_push("reset", "", "", "");
+            pairing_events_push("reset", "", "");
             flash_store_wifi_router_info("0" , "0" , (char *) WIFI_AP_MODE , 2 , 2);
             registeration_reset_counter = 0;
             flash_erase_write_reset_counter(registeration_reset_counter);

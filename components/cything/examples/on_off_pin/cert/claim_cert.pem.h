@@ -1,0 +1,5 @@
+R"PEM(
+-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----
+)PEM"

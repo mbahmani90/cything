@@ -74,15 +74,13 @@ void pairing_events_init(void){
     }
 }
 
-void pairing_events_push(const char *event, const char *user_sub,
-                         const char *install_id, const char *role){
+void pairing_events_push(const char *event, const char *user_sub, const char *role){
     /* Bounded copies so the snprintf below is provably within
-     * PAIRING_EVENT_JSON_MAX (52 literal + 15 + 80 + 64 + 15 + 10). */
-    char ev[16], rl[16], sub[2 * 40 + 1], inst[2 * 32 + 1];
+     * PAIRING_EVENT_JSON_MAX (39 literal + 15 + 80 + 15 + 10). */
+    char ev[16], rl[16], sub[2 * 40 + 1];
     json_escape(event, ev, sizeof(ev));
     json_escape(role, rl, sizeof(rl));
     json_escape(user_sub, sub, sizeof(sub));
-    json_escape(install_id, inst, sizeof(inst));
     time_t t = time(NULL);
     unsigned long at = (t > 1600000000) ? (unsigned long)t : 0;
 
@@ -93,8 +91,8 @@ void pairing_events_push(const char *event, const char *user_sub,
         s_q.count--;
     }
     snprintf(s_q.json[s_q.count], PAIRING_EVENT_JSON_MAX,
-             "{\"event\":\"%s\",\"userSub\":\"%s\",\"installId\":\"%s\",\"role\":\"%s\",\"at\":%lu}",
-             ev, sub, inst, rl, at);
+             "{\"event\":\"%s\",\"userSub\":\"%s\",\"role\":\"%s\",\"at\":%lu}",
+             ev, sub, rl, at);
     s_q.count++;
     nvs_store();
     xSemaphoreGive(s_mutex);

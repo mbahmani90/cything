@@ -171,21 +171,21 @@ ip,sourceTerminalId,deviceName,deviceType,deviceId,provisionState,firmwareVersio
 | 6 | `provisionState` | `"claimed"` once a CSR handshake has completed, else `"unprovisioned"` ([aws/provisioning.c](../src/aws/provisioning.c)) | `unprovisioned` |
 | 7 | `firmwareVersion` | `FIRMWARE_VERSION` | `1.0` |
 | 8 | `hardwareVersion` | `HARDWARE_VERSION` | `1.0` |
-| 9 | `provisioningCaps` | `"claim"` if a claim certificate is flashed (`claim_cert_pem[0] != '\0'`, [aws/claim_credentials.h](../src/aws/claim_credentials.h)), else empty | `claim` |
+| 9 | `provisioningCaps` | `\|`-separated capability flags ([udp_socket/udp_response_handler.c](../src/udp_socket/udp_response_handler.c)): `pake` always; `claim` if a claim certificate is flashed ([aws/claim_credentials.h](../src/aws/claim_credentials.h)); `nopw` while no device password is set; `authreq` if `LOCAL_AUTH_ENFORCE` is on and a password is set; `email` always (the paired list is one entry per account, labelled by email — see [local-auth.md](local-auth.md)) | `pake\|claim\|nopw\|email` |
 
 So a fresh, unprovisioned unit with claim material replies:
 
 ```
-192.168.1.42,,dev1,devtype1,,unprovisioned,1.0,1.0,claim
+192.168.1.42,,dev1,devtype1,,unprovisioned,1.0,1.0,pake|claim|nopw|email
 ```
 
 and the same unit after provisioning:
 
 ```
-192.168.1.42,<sourceTerminalId>,dev1,devtype1,<deviceId>,claimed,1.0,1.0,claim
+192.168.1.42,<sourceTerminalId>,dev1,devtype1,<deviceId>,claimed,1.0,1.0,pake|claim|nopw|email
 ```
 
-Field 9 tells the app whether it may run the `REQID:`/`CLAIM:`
+Field 9's `claim` flag tells the app whether it may run the `REQID:`/`CLAIM:`
 claim-attestation step over TCP; fields 2/5/6 tell it whether this device
 already belongs to an account. An unprovisioned reply is deliberately *not*
 recognised by the app's general device list — only the "add a device" flow
@@ -280,7 +280,7 @@ except socket.timeout:
 Expected output, one line per device:
 
 ```
-('192.168.1.42', 1234) 192.168.1.42,,dev1,devtype1,,unprovisioned,1.0,1.0,claim
+('192.168.1.42', 1234) 192.168.1.42,,dev1,devtype1,,unprovisioned,1.0,1.0,pake|claim|nopw|email
 ```
 
 On the device monitor you will see `Received 8 bytes from <ip>:`, the

@@ -1,9 +1,8 @@
-# Local-link security: password pairing, per-phone keys, encrypted lines
+# Local-link security: password pairing, per-account keys, encrypted lines
 
 How a phone earns the right to talk to this device over the **local link**
 (the TCP command server, port 1234 — [tcp-server.md](tcp-server.md)) and
-keeps it without a password, a cloud round-trip, or any secret shared
-between phones. The design and its rationale live in the app repo
+keeps it without a password or a cloud round-trip. The design and its rationale live in the app repo
 (`CypressTerminalKmp85327491/doc/local-pairing-password.md`); this page is
 the firmware reference: wire protocol, modules, storage, config, testing.
 
@@ -17,19 +16,21 @@ the firmware reference: wire protocol, modules, storage, config, testing.
 ```
 first phone / new phone            every later connection
 ──────────────────────             ──────────────────────
-PAKE1:<A>            ->            AUTH1:<sub>,<install>,<N_p>   ->
+PAKE1:<A>            ->            AUTH1:<sub>,<N_p>             ->
              <-  PAKE2:<salt>,<B>               <-  AUTH2:<N_d>,<dev proof>
 PAKE3:<M1>           ->            AUTH3:<phone proof>            ->
              <-  PAKE4:<M2>                     <-  AUTHOK
   ── K_pake, ENC: from here ──        ── K_session, ENC: from here ──
-ENC{ENROLL:<sub>,<name>,<install>} ->  ENC{on_cmd} ->
-             <-  ENC{ENROLLED:<K_phone>,<role>}   <-  ENC{12:on_res}
+ENC{ENROLL:<sub>,<email>}          ->  ENC{on_cmd} ->
+             <-  ENC{ENROLLED:<K_account>,<role>} <-  ENC{12:on_res}
 ```
 
 - The **device password** (8–64 chars) is proven with SRP-6a: it never
   crosses the wire, in any form. The device stores only a salt + verifier.
-- **`K_phone`** is a 32-byte random secret the device mints per phone at
-  `ENROLL` and keeps in its paired list. Reconnects prove it with
+- **`K_account`** is a 32-byte random secret the device mints per **account**
+  (userSub) at its first `ENROLL` and keeps in its paired list. Every phone of
+  the account uses the same key: the app escrows it in the backend, so a
+  second phone fetches it instead of pairing again. Reconnects prove it with
   nonce/HMAC, both ways, device first.
 - Every line after `PAKE4` / `AUTHOK` — both directions — is an **`ENC:`
   frame** (AES-256-GCM). Plaintext still works for un-paired sockets and
@@ -47,7 +48,7 @@ All under [src/security/](../src/security/), wired in by
 |---|---|
 | `local_session.{c,h}` | one slot per socket: framing count, auth state machine, SRP handle, current key, nonces, GCM counters, paired-list index, role. Acquired on `accept`, released (keys wiped) on close. Never moves — the fix for the old global `tcp_rec_data_counter`. |
 | `device_password.{c,h}` | NVS `cy_sec/pw_salt` + `pw_ver` (SRP verifier), `set/clear/get`, guess rate limiting (per IP in RAM, global persisted). |
-| `paired_list.{c,h}` | NVS blob `cy_sec/paired`: up to 16 × `{userSub, installId, displayName, K_phone, pairedAt, role}`. First entry = owner. |
+| `paired_list.{c,h}` | NVS blob `cy_sec/paired`: up to 16 × `{userSub, userEmail, K_account, pairedAt, role}`, one per account (`userEmail` = the owner's label in `LIST`). Blob v3; a v2 blob (with `installId` / `displayName`) is migrated on boot, `displayName` becoming the label. Role follows `owner_sub` (the first account to pair). |
 | `pake_handler.{c,h}` | `PAKE1..4` over `esp_srp`. Also `security_send_line()`, the direct-send helper the handshake replies use. |
 | `local_auth.{c,h}` | `ENROLL`, `AUTH1..3`; HMAC-SHA256 / HKDF-SHA256 helpers on `mbedtls_md`. |
 | `enc_frame.{c,h}` | `ENC:` framing: unwrap on receive (`tcp_client_recv.c`), wrap on send (`tcp_client_list.c` send task and `security_send_line`). PSA AEAD on mbedTLS 4 / `mbedtls_gcm` on 3. |
@@ -93,40 +94,58 @@ could not be derived. A fresh `PAKE1`/`AUTH1` always restarts the socket
 ### Enroll — inside the `K_pake` session
 
 ```
-app -> ENC{ ENROLL:<b64 userSub>,<b64 displayName>,<b64 installId>[,replace] }
-dev -> ENC{ ENROLLED:<b64 K_phone>,<owner|user> }      | ERR:SEQ | ERR:FULL | ERR:BADFMT | ERR:OTHERPHONE
+app -> ENC{ ENROLL:<b64 userSub>,<b64 userEmail> }
+dev -> ENC{ ENROLLED:<b64 K_account>,<owner|user> }    | ERR:SEQ | ERR:FULL | ERR:BADFMT
 ```
 
-**One phone per account.** If `userSub` already has an entry from another
-`installId`, a plain `ENROLL` gets `ERR:OTHERPHONE` and nothing changes. With
-the literal `,replace` suffix (the user chose "pair this phone instead") the
-other entry is removed first: its `K_phone` stops working (its next `AUTH1`
-gets `ERR:UNKNOWN`), any live session of it loses its auth, and an `unpaired`
-event is queued for it. The role follows the account (`owner_sub`), so an
-owner moving to a new phone stays the owner. `replace` is explicit so that two
-phones of one account don't take the device from each other on every connect.
+**One key per account.** A new `userSub` gets a fresh `K_account` and a new
+entry. A `userSub` that is already paired — from this phone or another — gets
+its **existing** `K_account` back; the key is never rotated by `ENROLL`, so
+two phones of one account pairing at once end up with the same key and never
+lock each other out, and the copy escrowed in the backend stays valid. The
+lookup is atomic (`paired_list_add` under the list mutex).
+
+This holds on an **open device** too: there anyone can `PAKE` with the public
+initial password and the `userSub` is only asserted, so whoever knows the
+owner's sub can get the owner's key while the device is open — as they can
+control the device anyway. `PWSET` therefore **rotates the owner account's
+key**: a key handed out while the device was open dies when the owner locks
+it.
+
+Older apps send `ENROLL:<sub>,<displayName>,<installId>[,replace]`; that is
+still accepted — `installId` and `,replace` are dropped and `displayName` is
+stored as the label until the app enrolls with an email.
 
 Identity travels only here, after the device proved itself in `PAKE4`.
 `ERR:SEQ` if not in `LS_PAKE_OK` or not sent as an `ENC:` frame.
-Re-enrolling the same `(userSub, installId)` replaces the key, keeps the
-role. Field limits: sub 40, name 32, install 32 bytes, printable ASCII.
+Re-enrolling updates the entry's `userEmail` and `pairedAt`; key and role
+stay. Field limits: sub 40, email 64 bytes, printable ASCII.
+
+`userEmail` is only a label for the owner (so `LIST` reads `alice@x.com`
+rather than a UUID). The device cannot verify it — the app asserts it, like
+the sub on an open device — and it goes stale if the account's email
+changes, until the next `ENROLL`. `userSub` stays the identity. It is PII in
+flash: `RESET` wipes it with the rest of the list, and it is not sent in
+pairing events.
 
 ### Reconnect — `AUTH1..3`
 
 ```
-app -> AUTH1:<b64 userSub>,<b64 installId>,<b64 N_p>           N_p: 16 random bytes
-dev -> AUTH2:<b64 N_d>,<b64 HMAC-SHA256(K_phone, "dev" ‖ N_p ‖ N_d)>   | ERR:UNKNOWN | ERR:BADFMT
-app -> AUTH3:<b64 HMAC-SHA256(K_phone, "phn" ‖ N_d ‖ N_p)>
+app -> AUTH1:<b64 userSub>,<b64 N_p>                           N_p: 16 random bytes
+dev -> AUTH2:<b64 N_d>,<b64 HMAC-SHA256(K_account, "dev" ‖ N_p ‖ N_d)>   | ERR:UNKNOWN | ERR:BADFMT
+app -> AUTH3:<b64 HMAC-SHA256(K_account, "phn" ‖ N_d ‖ N_p)>
 dev -> AUTHOK:<owner|user>                                       | ERR:BADAUTH | ERR:SEQ
 ```
 
-The role is this phone's entry in the paired list, as `ENROLLED` reports it:
+The entry is looked up by `userSub` (older apps' `AUTH1:<sub>,<installId>,<N_p>`
+is still accepted, `installId` ignored). The role is the account's entry in the paired list, as `ENROLLED` reports it:
 a reconnecting phone needs it to know whether the owner commands are its to
 send, and `LIST` (which would tell it) is owner-only.
 
-`K_session = HKDF-SHA256(ikm = K_phone, salt = N_p ‖ N_d, info =
+`K_session = HKDF-SHA256(ikm = K_account, salt = N_p ‖ N_d, info =
 "cy-local-v1")`, 32 bytes (extract + one expand block). `ERR:UNKNOWN` is
-what a revoked phone sees.
+what a revoked account sees. Any number of sockets may authenticate with
+the same `K_account` at once; each has its own nonces, so its own `K_session`.
 
 ### `ENC:` frames
 
@@ -151,21 +170,27 @@ The key is `K_pake` between `PAKE4` and the socket closing, or
 
 ```
 app -> LIST
-dev -> PAIRED:<b64 userSub>,<b64 installId>,<b64 displayName>,<pairedAt>,<owner|user>   × N
+dev -> PAIRED:<b64 userSub>,<b64 userEmail>,<pairedAt>,<owner|user>   × N
 dev -> PAIREND:<N>
 
-app -> REVOKE:<b64 userSub>,<b64 installId>
+app -> REVOKE:<b64 userSub>[,<b64 installId>]   (installId ignored)
 dev -> ACK                       | ERR:UNKNOWN | ERR:OWNER | ERR:BADFMT | ERR:STORE
 
 app -> PWSET:<b64 newPassword>   (8–64 bytes)
 dev -> ACK                       | ERR:BADFMT | ERR:STORE
+  Every non-owner account is revoked and the owner account's key is rotated;
+  the caller's session keeps working, and the app re-enrolls with the new
+  password on the same socket to get (and escrow) the new key.
 
 app -> UNPAIR                    (any authenticated session)
-dev -> ACK                       | ERR:AUTH | ERR:UNKNOWN
-  Removes the CALLER's own entry ("delete this device from my phone"),
-  whatever its role, and publishes an `unpaired` event. If the owner
-  unpairs while other phones remain, entry 0 is promoted to owner so the
-  device stays manageable.
+dev -> ACK                       | ERR:OWNER | ERR:AUTH | ERR:UNKNOWN
+  Removes the CALLER's own account entry ("delete this device from my
+  account") — every phone of the account loses local access — and publishes
+  an `unpaired` event. USER accounts only: the owner gets `ERR:OWNER` and
+  stays paired. Ownership belongs to the account that onboarded the device
+  (the first to ENROLL after a factory reset) and never moves to another
+  account; only `RESET` or the power-cycle factory reset clears it. The app's
+  "Delete device" on the owner's phone therefore only hides the device.
 
 app -> RESET
 dev -> ACK                       (then the list + password are wiped, every session de-authenticated)
@@ -180,12 +205,14 @@ app -> DISCOVERYMODE?
 dev -> DISCOVERYMODE:<1|2|3>     the mode currently applied
 ```
 
-Non-owner → `ERR:AUTH`. Revoking a phone that is connected right now
-drops its session on the spot. `REVOKE` of the caller's OWN entry is refused
+Non-owner → `ERR:AUTH`. Revoking an account drops every one of its sessions
+that is connected right now. `REVOKE` of the caller's OWN entry is refused
 (`ERR:OWNER`) so the device is never left without a manager — that is
-`UNPAIR`; any other entry may go, including the owner account's other
-installs. `PWSET` revokes every non-owner phone (they re-pair with the new
-password); the owner account's phones are kept.
+`UNPAIR`. `PWSET` revokes every non-owner account (they re-pair with the new
+password); the owner account is kept. A stolen phone means revoking the whole
+account and pairing again: that mints a new `K_account`, which the app escrows
+in place of the old one. For the owner (who cannot unpair) it is `PWSET`, which
+rotates the owner key.
 
 ### Open device (no password stored)
 
@@ -206,14 +233,13 @@ so nothing after `PAKE4` travels in plaintext. No rate limiting applies.
 - **Any later phone:** `PAKE` (initial password) → `ENROLL` → `user`.
   Its entry lasts until the owner sets a password: `PWSET` revokes every
   user, and from then on new phones pair with the real password.
-- **The owner's account from another phone:** `ENROLL` → `ERR:OTHERPHONE`;
-  `ENROLL …,replace` → `owner`, replacing the owner's previous phone (one
-  phone per account). The owner's current
-  phone just reconnects with `AUTH` and can `PWSET` to lock the device again.
+- **An already-paired account from another phone** (or a reinstalled one):
+  `ENROLL` → its existing `K_account` and role. Normally the app fetches the
+  key from the backend escrow and goes straight to `AUTH` instead.
 
 Accepted risk: `userSub` is asserted, not proven, while the device is open, so
-anyone on the LAN who knows the owner's sub can move ownership to their phone
-(and then `PWSET` it; the real owner recovers with a factory reset). An open
+anyone on the LAN who knows the owner's sub gets the owner's key (and role) —
+until the owner's `PWSET`, which rotates that key. An open
 device is controllable by anyone on the LAN anyway; setting a password closes
 the window, since `PAKE` then needs it.
 
@@ -253,7 +279,7 @@ reaches everyone — use it for the reply to a public command, or
 | `pevents` | blob | header + `count` × 256 B JSON events awaiting publish |
 
 Flash dump exposure: the verifier still has to be cracked like a password
-hash; the `K_phone`s are directly usable. **Enable flash encryption +
+hash; the `K_account`s are directly usable. **Enable flash encryption +
 secure boot on production units** — build-config, not covered here.
 
 ## Rate limiting
@@ -275,7 +301,7 @@ A password can only be tested by running the exchange against this device
 second) on `<sourceTerminalId>/<deviceType>/<deviceId>/pairing`:
 
 ```json
-{"event":"paired","userSub":"…","installId":"…","role":"user","at":1789664982}
+{"event":"paired","userSub":"…","role":"user","at":1789664982}
 ```
 
 Over the device's own mutual-TLS session, so the backend may trust it and
@@ -294,7 +320,7 @@ is 1, `claim` as before. See [udp-discovery.md](udp-discovery.md).
 |---|---|---|---|
 | `LOCAL_AUTH_ENFORCE` | device_config.h | 0 | apply the access policy |
 | `LOCAL_SESSION_MAX` | local_session.h | 8 | concurrent local sockets |
-| `PAIRED_LIST_MAX` | paired_list.h | 16 | paired phones |
+| `PAIRED_LIST_MAX` | paired_list.h | 16 | paired accounts |
 | `DEVICE_PW_MIN_LEN` / `MAX_LEN` | device_password.h | 8 / 64 | |
 | `cy_initial_password` | cything_device_params.h (`CYTHING_INITIAL_PASSWORD`) | `12345678` | PAKE password while none is set |
 | `ENC_FRAME_PLAIN_MAX` | enc_frame.h | 768 | longest encryptable line |
@@ -311,13 +337,14 @@ whole protocol (needs `cryptography` for AES-GCM — the IDF venv has it):
 
 ```
 PY=~/.espressif/tools/python/v6.0.2/venv/bin/python
-$PY scripts/local_auth_client.py -v pair <ip> 12345678                  # open device: PAKE + ENROLL -> K_phone (owner)
-$PY scripts/local_auth_client.py pwset <ip> testpass123 --k-phone <K_phone>   # owner locks it
-$PY scripts/local_auth_client.py auth <ip> <K_phone> --send on_cmd      # AUTH + an encrypted command
-$PY scripts/local_auth_client.py pair <ip> testpass123 --sub bob --install bobphone --name "Bob"
-$PY scripts/local_auth_client.py list <ip> <owner K_phone>
-$PY scripts/local_auth_client.py revoke <ip> <owner K_phone> bob bobphone
-$PY scripts/local_auth_client.py reset <ip> <owner K_phone>
+$PY scripts/local_auth_client.py -v pair <ip> 12345678                  # open device: PAKE + ENROLL -> K_account (owner)
+$PY scripts/local_auth_client.py pwset <ip> testpass123 --k-account <K_account>   # owner locks it
+$PY scripts/local_auth_client.py auth <ip> <K_account> --send on_cmd      # AUTH + an encrypted command
+$PY scripts/local_auth_client.py pair <ip> testpass123 --sub bob --email bob@example.com
+$PY scripts/local_auth_client.py pair <ip> testpass123 --sub bob --email bob@example.com   # a 2nd phone: same K_account
+$PY scripts/local_auth_client.py list <ip> <owner K_account>                                # shows bob@example.com
+$PY scripts/local_auth_client.py revoke <ip> <owner K_account> bob
+$PY scripts/local_auth_client.py reset <ip> <owner K_account>
 ```
 
 Expected failures worth trying: wrong password → `ERR:BADPW`, six in a row
@@ -329,8 +356,8 @@ Expected failures worth trying: wrong password → `ERR:BADPW`, six in a row
 - Android/iOS client (the app repo).
 - Backend: IoT rule + `pairing-bridge` Lambda, IoT policy for the
   `pairing` topic.
-- Key escrow for a second phone on the same account (design: opt-in,
-  owner-only record in the backend).
+- Key escrow: the app stores `K_account` in an owner-only, KMS-encrypted
+  backend record after `ENROLLED`; the account's other phones fetch it.
 - Handshake idle timeout: a `PAKE1` never followed by `PAKE3` keeps its
   ~2 KB SRP context until the socket closes.
 - Flash encryption / secure boot.

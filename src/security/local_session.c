@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "esp_srp.h"
+#include "lwip/sockets.h"
 
 #include "common/cy_log.h"
 
@@ -145,6 +146,20 @@ int local_session_count(void){
     xSemaphoreTake(pool_mutex, portMAX_DELAY);
     for(int i = 0 ; i < LOCAL_SESSION_MAX ; i++){
         if(pool[i].sock != -1) n++;
+    }
+    xSemaphoreGive(pool_mutex);
+    return n;
+}
+
+int local_session_shutdown_peer(uint32_t peer_ip){
+    int n = 0;
+    if(peer_ip == 0) return 0;
+    xSemaphoreTake(pool_mutex, portMAX_DELAY);
+    for(int i = 0 ; i < LOCAL_SESSION_MAX ; i++){
+        if(pool[i].sock != -1 && pool[i].peer_ip == peer_ip){
+            shutdown(pool[i].sock, SHUT_RDWR);
+            n++;
+        }
     }
     xSemaphoreGive(pool_mutex);
     return n;

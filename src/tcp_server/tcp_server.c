@@ -60,8 +60,13 @@ void tcp_server_task(void *pvParameters)
             socklen_t addr_len = sizeof(source_addr);
             int sock = accept(listen_sock, (struct sockaddr *)&source_addr, &addr_len);
             if (sock < 0) {
+                // Out of sockets / memory (errno 23 = ENFILE) is transient: keep
+                // this listening socket and try again. Leaving the loop used to
+                // open a NEW listening socket without closing this one, leaking
+                // one socket per failure until none were left.
                 CY_LOGE(TCP_SERVER_DB, "Unable to accept connection: errno %d", errno);
-                break;
+                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                continue;
             }
 
             if (TCP_SERVER_DB) {
@@ -71,6 +76,26 @@ void tcp_server_task(void *pvParameters)
                 }
                 CY_LOGI(TCP_SERVER_DB, "Socket accepted ip address: %s", addr_str);
             }
+            uint32_t peer_ip = 0;
+            if (source_addr.ss_family == PF_INET) {
+                peer_ip = ((struct sockaddr_in *)&source_addr)->sin_addr.s_addr;
+            }
+
+            // At the cap: the same phone reconnecting replaces its own older
+            // connection(s) (their recv tasks clean up); anyone else is refused.
+            if(local_session_count() >= TCP_CLIENT_MAX && local_session_shutdown_peer(peer_ip) == 0){
+                CY_LOGW(TCP_SERVER_DB, "%d connections already, rejecting", TCP_CLIENT_MAX);
+                shutdown(sock, 0);
+                close(sock);
+                continue;
+            }
+
+            int ka = 1, ka_idle = TCP_KEEPALIVE_IDLE_S, ka_intvl = TCP_KEEPALIVE_INTVL_S, ka_cnt = TCP_KEEPALIVE_CNT;
+            setsockopt(sock, SOL_SOCKET,  SO_KEEPALIVE,  &ka,       sizeof(ka));
+            setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE,  &ka_idle,  sizeof(ka_idle));
+            setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &ka_intvl, sizeof(ka_intvl));
+            setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT,   &ka_cnt,   sizeof(ka_cnt));
+
             // Registry or session pool full: refuse the client instead of
             // leaving an unread socket open.
             if(!add_account(sock)){
@@ -78,10 +103,6 @@ void tcp_server_task(void *pvParameters)
                 shutdown(sock, 0);
                 close(sock);
                 continue;
-            }
-            uint32_t peer_ip = 0;
-            if (source_addr.ss_family == PF_INET) {
-                peer_ip = ((struct sockaddr_in *)&source_addr)->sin_addr.s_addr;
             }
             local_session_t *session = local_session_acquire(sock, peer_ip);
             if(session == NULL){
@@ -93,7 +114,17 @@ void tcp_server_task(void *pvParameters)
             // The session slot never moves, so the task can keep this pointer
             // for the life of the connection (account_struct_list is compacted
             // on every disconnect, which is why it is not passed instead).
-            xTaskCreate(tcp_client_recv_task, "tcp_client_recv", TCP_SERVER_RECV_TASK_STACK_SIZE, (void *)session , TCP_SERVER_RECV_TASK_PRIORITY, NULL);
+            // No heap for the task: undo, or the socket and its slot would
+            // be held forever with nothing to read or close them.
+            if(xTaskCreate(tcp_client_recv_task, "tcp_client_recv", TCP_SERVER_RECV_TASK_STACK_SIZE,
+                           (void *)session , TCP_SERVER_RECV_TASK_PRIORITY, NULL) != pdPASS){
+                CY_LOGE(TCP_SERVER_DB, "No memory for a client task, rejecting connection");
+                local_session_release(sock);
+                remove_account(sock);
+                shutdown(sock, 0);
+                close(sock);
+                continue;
+            }
 
         }
         

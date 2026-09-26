@@ -75,15 +75,13 @@ static void handle_list(local_session_t *s){
         paired_entry_t e;
         if(!paired_list_get(i, &e)) break;
 
-        char line[sizeof("PAIRED:") + B64_MAX(PAIRED_SUB_MAX) + B64_MAX(PAIRED_INSTALL_MAX) +
-                  B64_MAX(PAIRED_NAME_MAX) + 3 + 10 + 1 + 6];
+        char line[sizeof("PAIRED:") + B64_MAX(PAIRED_SUB_MAX) + B64_MAX(PAIRED_EMAIL_MAX) +
+                  2 + 10 + 1 + 6];
         size_t pos = 0, n = 0;
         pos += snprintf(line + pos, sizeof(line) - pos, "PAIRED:");
         mbedtls_base64_encode((unsigned char *)line + pos, sizeof(line) - pos, &n, (const unsigned char *)e.user_sub, strlen(e.user_sub));
         pos += n; line[pos++] = ',';
-        mbedtls_base64_encode((unsigned char *)line + pos, sizeof(line) - pos, &n, (const unsigned char *)e.install_id, strlen(e.install_id));
-        pos += n; line[pos++] = ',';
-        mbedtls_base64_encode((unsigned char *)line + pos, sizeof(line) - pos, &n, (const unsigned char *)e.display_name, strlen(e.display_name));
+        mbedtls_base64_encode((unsigned char *)line + pos, sizeof(line) - pos, &n, (const unsigned char *)e.user_email, strlen(e.user_email));
         pos += n;
         snprintf(line + pos, sizeof(line) - pos, ",%lu,%s", (unsigned long)e.paired_at,
                  e.role == PAIRED_ROLE_OWNER ? "owner" : "user");
@@ -100,47 +98,59 @@ static void handle_list(local_session_t *s){
 static void handle_revoke(local_session_t *s, const char *line, int len){
     const char *p = line + strlen("REVOKE:");
     const char *end = line + len;
-    uint8_t f_sub[PAIRED_SUB_MAX + 1], f_inst[PAIRED_INSTALL_MAX + 1];
-    char user_sub[PAIRED_SUB_MAX + 1], install[PAIRED_INSTALL_MAX + 1];
+    uint8_t f_sub[PAIRED_SUB_MAX + 1], f_inst[PAIRED_SUB_MAX + 1];
+    char user_sub[PAIRED_SUB_MAX + 1], install[PAIRED_SUB_MAX + 1];
 
-    int n1 = next_b64_field(&p, end, f_sub,  sizeof(f_sub),  false);
-    int n2 = next_b64_field(&p, end, f_inst, sizeof(f_inst), true);
-    if(!to_cstr(f_sub, n1, user_sub, sizeof(user_sub)) || !to_cstr(f_inst, n2, install, sizeof(install))){
+    /* REVOKE:<sub>[,<installId>] — the entry is the account, so a trailing
+     * installId (older apps send one) is checked for format and ignored. */
+    bool has_install = memchr(p, ',', end - p) != NULL;
+    int n1 = next_b64_field(&p, end, f_sub, sizeof(f_sub), !has_install);
+    if(!to_cstr(f_sub, n1, user_sub, sizeof(user_sub))){
         send_err(s->sock, "BADFMT");
         return;
     }
+    if(has_install){
+        int n2 = next_b64_field(&p, end, f_inst, sizeof(f_inst), true);
+        if(!to_cstr(f_inst, n2, install, sizeof(install))){
+            send_err(s->sock, "BADFMT");
+            return;
+        }
+    }
 
-    int index = paired_list_find(user_sub, install);
+    int index = paired_list_find(user_sub);
     paired_entry_t e;
     if(index < 0 || !paired_list_get(index, &e)){
         send_err(s->sock, "UNKNOWN");
         return;
     }
     if(index == s->paired_index){
-        /* Never the entry this session runs on — the device would be left
-         * with no one to manage it. "Delete from my phone" is UNPAIR. Other
-         * owner-role entries (the same account's old installs) may go. */
+        /* Never the entry this session runs on (the owner account) — the
+         * device would be left with no one to manage it. "Delete from my
+         * phone" is UNPAIR. */
         send_err(s->sock, "OWNER");
         return;
     }
     const char *role = e.role == PAIRED_ROLE_OWNER ? "owner" : "user";
+    char email[PAIRED_EMAIL_MAX + 1];
+    snprintf(email, sizeof(email), "%s", e.user_email);
+    memset(e.key, 0, sizeof(e.key));
     if(paired_list_remove(index) != ESP_OK){
         send_err(s->sock, "STORE");
         return;
     }
     local_session_on_paired_removed(index);
-    pairing_events_push("unpaired", user_sub, install, role);
+    pairing_events_push("unpaired", user_sub, role);
     security_send_line(s->sock, "ACK");
-    CY_LOGI(TCP_SERVER_DB, "owner: revoked %s / %s (%s)", user_sub, install, role);
+    CY_LOGI(TCP_SERVER_DB, "owner: revoked %s (%s, %s)", user_sub, email, role);
 }
 
 /* ---- PWSET ------------------------------------------------------------ */
 
-/* Rotating the password revokes every non-owner phone: K_phone is otherwise
- * independent of the password, so without this a phone that paired under the
+/* Rotating the password revokes every non-owner account: K_account is otherwise
+ * independent of the password, so without this an account that paired under the
  * old password would keep access. Their entries are deleted (they must re-pair
- * with the new password); the owner account's own phones are kept. Each removed
- * phone gets an "unpaired" event so the backend drops its remote access too.
+ * with the new password); the owner account is kept. Each removed account gets
+ * an "unpaired" event so the backend drops its remote access too.
  * (RESET still wipes everyone, including the owner.) */
 static void revoke_all_non_owner(void){
     int i = 0;
@@ -148,14 +158,14 @@ static void revoke_all_non_owner(void){
         paired_entry_t e;
         if(!paired_list_get(i, &e)) break;
         if(e.role != PAIRED_ROLE_OWNER){
-            char sub[PAIRED_SUB_MAX + 1], inst[PAIRED_INSTALL_MAX + 1];
-            snprintf(sub,  sizeof(sub),  "%s", e.user_sub);
-            snprintf(inst, sizeof(inst), "%s", e.install_id);
+            char sub[PAIRED_SUB_MAX + 1], email[PAIRED_EMAIL_MAX + 1];
+            snprintf(sub,   sizeof(sub),   "%s", e.user_sub);
+            snprintf(email, sizeof(email), "%s", e.user_email);
             if(paired_list_remove(i) == ESP_OK){
                 /* index unchanged: the tail shifted down into slot i. */
                 local_session_on_paired_removed(i);
-                pairing_events_push("unpaired", sub, inst, "user");
-                CY_LOGI(TCP_SERVER_DB, "owner: pw change revoked %s / %s", sub, inst);
+                pairing_events_push("unpaired", sub, "user");
+                CY_LOGI(TCP_SERVER_DB, "owner: pw change revoked %s (%s)", sub, email);
             }else{
                 i++;   /* avoid a spin if a store fails */
             }
@@ -181,6 +191,10 @@ static void handle_pwset(local_session_t *s, const char *line, int len){
         return;
     }
     revoke_all_non_owner();
+    /* A key handed out while the device was open (to anyone claiming the
+     * owner's sub) must not outlive the lock. This session keeps its session
+     * key; the owner's phones re-enroll with the new password. */
+    paired_list_rotate_owner_key();
     security_send_line(s->sock, "ACK");
     CY_LOGI(TCP_SERVER_DB, "owner: password %s", was_set ? "changed" : "set — device is now locked");
 }
@@ -190,7 +204,7 @@ static void handle_pwset(local_session_t *s, const char *line, int len){
 /* Remove the device password so the device is open — anyone on the LAN can
  * connect without pairing (see access_policy: no password => nothing is
  * protected). Owner-only. Unlike RESET the paired list is kept, so the owner
- * stays owner and can re-protect it later (their K_phone still works; pairings
+ * stays owner and can re-protect it later (their K_account still works; pairings
  * are simply moot while the device is open). */
 static void handle_pwclear(local_session_t *s){
     esp_err_t err = device_password_clear();
@@ -210,7 +224,7 @@ static void handle_reset(local_session_t *s){
     paired_list_clear();
     device_password_clear();
     local_session_drop_all_auth();
-    pairing_events_push("reset", "", "", "");
+    pairing_events_push("reset", "", "");
     CY_LOGW(TCP_SERVER_DB, "owner: RESET — paired list and password wiped");
 }
 
@@ -252,26 +266,33 @@ static void handle_discoverymode_get(local_session_t *s){
 /* ---- UNPAIR (self) ---------------------------------------------------- */
 
 /* The caller removes its OWN entry from the paired list — "delete this
- * device from my phone". Any authenticated session, not just the owner. If
- * the owner unpairs while other phones remain, entry 0 is promoted to owner
- * so the device stays manageable. */
+ * device from my account". The entry is the account's, so every phone of the
+ * account loses local access (their sessions are de-authenticated too). Any
+ * authenticated USER session. The owner is refused (ERR:OWNER) and stays
+ * paired: ownership belongs to the account that onboarded the device and
+ * never moves — only a factory reset (RESET, or the power-cycle reset) clears
+ * it. Deleting the device from the owner's app list just hides it there. */
 static void handle_unpair(local_session_t *s){
     paired_entry_t e;
     if(!paired_list_get(s->paired_index, &e)){
         send_err(s->sock, "UNKNOWN");
         return;
     }
-    bool was_owner = (e.role == PAIRED_ROLE_OWNER);
+    if(e.role == PAIRED_ROLE_OWNER){
+        memset(e.key, 0, sizeof(e.key));
+        send_err(s->sock, "OWNER");
+        CY_LOGI(TCP_SERVER_DB, "unpair: refused for owner %s", e.user_sub);
+        return;
+    }
+    memset(e.key, 0, sizeof(e.key));
     /* Reply while the session key is still valid. */
     security_send_line(s->sock, "ACK");
 
     int index = s->paired_index;
     if(paired_list_remove(index) == ESP_OK){
         local_session_on_paired_removed(index);   /* de-auths this session too */
-        if(was_owner) paired_list_promote_owner();
-        pairing_events_push("unpaired", e.user_sub, e.install_id,
-                            was_owner ? "owner" : "user");
-        CY_LOGI(TCP_SERVER_DB, "unpair: %s / %s removed self", e.user_sub, e.install_id);
+        pairing_events_push("unpaired", e.user_sub, "user");
+        CY_LOGI(TCP_SERVER_DB, "unpair: %s (%s) removed self", e.user_sub, e.user_email);
     }
 }
 
