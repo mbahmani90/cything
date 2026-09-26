@@ -36,6 +36,7 @@ __attribute__((weak)) const char cy_firmware_version[] = FIRMWARE_VERSION;
 __attribute__((weak)) const char cy_major_unique_id[]  = "";
 __attribute__((weak)) const char cy_ota_username[]     = "";
 __attribute__((weak)) const char cy_ota_password[]     = "";
+__attribute__((weak)) const char cy_initial_password[] = "12345678";
 
 size_t cy_scan_command_len(void){
     /* == sizeof(SCAN_COMMAND) - 3 for the default "GET_INFO". */

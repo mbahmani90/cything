@@ -74,7 +74,7 @@ phone must match them exactly. Integers are minimal-length big-endian.
 
 ```
 app -> PAKE1:<b64 A>                      A = g^a
-dev -> PAKE2:<b64 salt>,<b64 B>           B = k·v + g^b        | ERR:NOPW | ERR:LOCKED,<s> | ERR:BADFMT
+dev -> PAKE2:<b64 salt>,<b64 B>           B = k·v + g^b        | ERR:LOCKED,<s> | ERR:BADFMT | ERR:NOPW
 app -> PAKE3:<b64 M1>                     M1 = H(H(N)⊕H(PAD(g)) ‖ H(I) ‖ s ‖ A ‖ B ‖ K)
 dev -> PAKE4:<b64 M2>                     M2 = H(A ‖ M1 ‖ K)   | ERR:BADPW | ERR:SEQ | ERR:BADFMT
 ```
@@ -85,16 +85,26 @@ with `k = H(N ‖ PAD(g))`, `u = H(PAD(A) ‖ PAD(B))`, `x = H(s ‖ H(I ":" P))
 [scripts/local_auth_client.py](../scripts/local_auth_client.py) is the
 byte-exact reference for these formulas.
 
-`ERR:LOCKED,<seconds>` — rate limited. `ERR:NOPW` — no password stored;
-see *Bootstrap*. A fresh `PAKE1`/`AUTH1` always restarts the socket
+`ERR:LOCKED,<seconds>` — rate limited. With no password stored, `P` is the
+model's initial password (see *Open device*); `ERR:NOPW` means its verifier
+could not be derived. A fresh `PAKE1`/`AUTH1` always restarts the socket
 (local_session_reset_handshake), so a half-finished handshake never wedges it.
 
 ### Enroll — inside the `K_pake` session
 
 ```
-app -> ENC{ ENROLL:<b64 userSub>,<b64 displayName>,<b64 installId> }
-dev -> ENC{ ENROLLED:<b64 K_phone>,<owner|user> }      | ERR:SEQ | ERR:FULL | ERR:BADFMT
+app -> ENC{ ENROLL:<b64 userSub>,<b64 displayName>,<b64 installId>[,replace] }
+dev -> ENC{ ENROLLED:<b64 K_phone>,<owner|user> }      | ERR:SEQ | ERR:FULL | ERR:BADFMT | ERR:OTHERPHONE
 ```
+
+**One phone per account.** If `userSub` already has an entry from another
+`installId`, a plain `ENROLL` gets `ERR:OTHERPHONE` and nothing changes. With
+the literal `,replace` suffix (the user chose "pair this phone instead") the
+other entry is removed first: its `K_phone` stops working (its next `AUTH1`
+gets `ERR:UNKNOWN`), any live session of it loses its auth, and an `unpaired`
+event is queued for it. The role follows the account (`owner_sub`), so an
+owner moving to a new phone stays the owner. `replace` is explicit so that two
+phones of one account don't take the device from each other on every connect.
 
 Identity travels only here, after the device proved itself in `PAKE4`.
 `ERR:SEQ` if not in `LS_PAKE_OK` or not sent as an `ENC:` frame.
@@ -174,16 +184,43 @@ Non-owner → `ERR:AUTH`. Revoking a phone that is connected right now
 drops its session on the spot. `REVOKE` of the caller's OWN entry is refused
 (`ERR:OWNER`) so the device is never left without a manager — that is
 `UNPAIR`; any other entry may go, including the owner account's other
-installs. `PWSET` leaves the paired list alone.
+installs. `PWSET` revokes every non-owner phone (they re-pair with the new
+password); the owner account's phones are kept.
 
-### Bootstrap (no password stored)
+### Open device (no password stored)
 
-A fresh unit, or one after `RESET` / the power-cycle factory reset, has no
-password. In that state every line is public (nothing *can* be protected)
-and **`PWSET:` is open to any socket** — that is how the first password
-gets in over TCP. The phone that sets it should immediately `PAKE` +
-`ENROLL` with it and thereby become the owner. `pake|nopw` in the scan
-reply's caps announces this state.
+A fresh unit, one after `RESET` / the power-cycle factory reset, or one the
+owner opened with `PWCLEAR` has no password: it is **open to all**, every
+line is public, and `pake|nopw` in the scan reply's caps says so.
+
+`PAKE` still works in this state, with the model's **initial password**
+(`cy_initial_password`, default `12345678`, set per model from
+`CYTHING_INITIAL_PASSWORD` in `cything_device_params.h`; the app reads the same
+value from the DefinedDevice). It is public — it does not authenticate
+anyone — but SRP still gives the socket a key an eavesdropper cannot derive,
+so nothing after `PAKE4` travels in plaintext. No rate limiting applies.
+
+- **First phone:** `PAKE` (initial password) → `ENROLL` → becomes the owner
+  → `PWSET` inside the same `ENC:` session. The password never crosses the
+  LAN in plaintext.
+- **Any later phone:** `PAKE` (initial password) → `ENROLL` → `user`.
+  Its entry lasts until the owner sets a password: `PWSET` revokes every
+  user, and from then on new phones pair with the real password.
+- **The owner's account from another phone:** `ENROLL` → `ERR:OTHERPHONE`;
+  `ENROLL …,replace` → `owner`, replacing the owner's previous phone (one
+  phone per account). The owner's current
+  phone just reconnects with `AUTH` and can `PWSET` to lock the device again.
+
+Accepted risk: `userSub` is asserted, not proven, while the device is open, so
+anyone on the LAN who knows the owner's sub can move ownership to their phone
+(and then `PWSET` it; the real owner recovers with a factory reset). An open
+device is controllable by anyone on the LAN anyway; setting a password closes
+the window, since `PAKE` then needs it.
+
+`PWSET` is owner-only in every state; there is no plaintext bootstrap.
+An active man-in-the-middle who knows the initial password can still
+impersonate the device during that first `PWSET`; a per-unit password
+(label / QR) would close that.
 
 ## Access policy
 
@@ -248,7 +285,7 @@ policy must allow `iot:Publish` on that topic.
 ## Scan reply
 
 `provisioningCaps` (field 9) is now `|`-separated: `pake` always,
-`nopw` while no password is stored, `authreq` when `LOCAL_AUTH_ENFORCE`
+`nopw` while no password is stored (PAKE with the initial password), `authreq` when `LOCAL_AUTH_ENFORCE`
 is 1, `claim` as before. See [udp-discovery.md](udp-discovery.md).
 
 ## Config
@@ -259,6 +296,7 @@ is 1, `claim` as before. See [udp-discovery.md](udp-discovery.md).
 | `LOCAL_SESSION_MAX` | local_session.h | 8 | concurrent local sockets |
 | `PAIRED_LIST_MAX` | paired_list.h | 16 | paired phones |
 | `DEVICE_PW_MIN_LEN` / `MAX_LEN` | device_password.h | 8 / 64 | |
+| `cy_initial_password` | cything_device_params.h (`CYTHING_INITIAL_PASSWORD`) | `12345678` | PAKE password while none is set |
 | `ENC_FRAME_PLAIN_MAX` | enc_frame.h | 768 | longest encryptable line |
 | `TCP_RESPONSE_SEND_TASK_STACK_SIZE` | task_config.h | 5120 | raised from 3072 for the frame buffers |
 
@@ -273,8 +311,8 @@ whole protocol (needs `cryptography` for AES-GCM — the IDF venv has it):
 
 ```
 PY=~/.espressif/tools/python/v6.0.2/venv/bin/python
-$PY scripts/local_auth_client.py pwset <ip> testpass123                 # bootstrap: first password
-$PY scripts/local_auth_client.py -v pair <ip> testpass123               # PAKE + ENROLL -> prints K_phone (this run = owner)
+$PY scripts/local_auth_client.py -v pair <ip> 12345678                  # open device: PAKE + ENROLL -> K_phone (owner)
+$PY scripts/local_auth_client.py pwset <ip> testpass123 --k-phone <K_phone>   # owner locks it
 $PY scripts/local_auth_client.py auth <ip> <K_phone> --send on_cmd      # AUTH + an encrypted command
 $PY scripts/local_auth_client.py pair <ip> testpass123 --sub bob --install bobphone --name "Bob"
 $PY scripts/local_auth_client.py list <ip> <owner K_phone>

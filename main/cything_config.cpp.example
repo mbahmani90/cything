@@ -41,6 +41,7 @@ const char cy_hardware_version[] = CYTHING_HARDWARE_VERSION;
 const char cy_major_unique_id[]  = CYTHING_MAJOR_UNIQUE_ID;
 const char cy_ota_username[]     = CYTHING_OTA_USERNAME;
 const char cy_ota_password[]     = CYTHING_OTA_PASSWORD;
+const char cy_initial_password[] = CYTHING_INITIAL_PASSWORD;
 
 /* The firmware repo owns the version string (scripts/release.sh rewrites
  * FIRMWARE_VERSION). Uncomment to let the model's value win instead:

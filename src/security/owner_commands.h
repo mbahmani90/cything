@@ -18,10 +18,9 @@
  *
  *   app -> PWSET:<b64 newPassword>   (DEVICE_PW_MIN_LEN..DEVICE_PW_MAX_LEN bytes)
  *   dev -> ACK                       or ERR:BADFMT
- *          New salt/verifier; the paired list is untouched. Bootstrap: while
- *          no password is stored yet this is open to any socket — it is how
- *          the first password gets in over TCP (BLE provisioning is the other
- *          way). In that state the line is necessarily plaintext.
+ *          New salt/verifier; every non-owner phone is revoked. Owner-only
+ *          even on an open device: there the first phone PAKEs with the
+ *          initial password and ENROLLs (becoming owner) before this.
  *
  *   app -> UNPAIR                    (any authenticated session — removes the
  *   dev -> ACK                       caller's OWN entry; owner leaving with
@@ -30,7 +29,7 @@
  *   app -> RESET
  *   dev -> ACK
  *          Wipes the paired list and the password; every session (including
- *          the owner's) is de-authenticated. The unit is back to bootstrap.
+ *          the owner's) is de-authenticated. The unit is back to open.
  *
  *   app -> DISCOVERYMODE:<mode>  (mode is "1" for Wi-Fi, "2" for BLE, "3" for both)
  *   dev -> ACK                   or ERR:BADFMT

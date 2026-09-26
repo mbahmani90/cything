@@ -173,18 +173,16 @@ static void handle_pwset(local_session_t *s, const char *line, int len){
         send_err(s->sock, "BADFMT");
         return;
     }
+    bool was_set = device_password_is_set();
     esp_err_t err = device_password_set((const char *)pw, (size_t)n);
     memset(pw, 0, sizeof(pw));
     if(err != ESP_OK){
         send_err(s->sock, "STORE");
         return;
     }
-    /* A change (owner session) revokes every other phone; bootstrap has none. */
-    if(s->role == LS_ROLE_OWNER){
-        revoke_all_non_owner();
-    }
+    revoke_all_non_owner();
     security_send_line(s->sock, "ACK");
-    CY_LOGI(TCP_SERVER_DB, "owner: password %s", s->role == LS_ROLE_OWNER ? "changed" : "set (bootstrap)");
+    CY_LOGI(TCP_SERVER_DB, "owner: password %s", was_set ? "changed" : "set — device is now locked");
 }
 
 /* ---- PWCLEAR (open to all) -------------------------------------------- */
@@ -297,31 +295,10 @@ bool owner_commands_handle_line(char *line, int len, int sock){
         return true;
     }
 
-    /* Bootstrap: no password yet, PWSET from anyone. Remember it on this
-     * session: it borrowed the open state to set a password, and may need
-     * to give it back with PWCLEAR (below) once it has enrolled, even if
-     * ENROLL does not make it the owner. */
-    if(is_pwset && !device_password_is_set()){
-        s->bootstrap_claim = true;
-        handle_pwset(s, line, len);
-        return true;
-    }
-
     /* UNPAIR acts on the caller's own entry — any authenticated session. */
     if(is_unpair){
         if(!is_authed_session(s)) send_err(sock, "AUTH");
         else                      handle_unpair(s);
-        return true;
-    }
-
-    /* PWCLEAR from a session that bootstrapped its own password on this same
-     * connection and has since enrolled: let it close the open window it
-     * opened for itself, even without the OWNER role (paired_list may already
-     * have a different owner_sub). One-shot — this grants nothing else
-     * owner-gated, and a later PWCLEAR on this session needs real ownership. */
-    if(is_pwclear && s->bootstrap_claim && is_authed_session(s) && !is_owner_session(s)){
-        s->bootstrap_claim = false;
-        handle_pwclear(s);
         return true;
     }
 

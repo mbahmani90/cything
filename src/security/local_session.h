@@ -58,14 +58,6 @@ typedef struct {
     uint64_t tx_ctr;               /* GCM counter nonces, one per direction */
     uint64_t rx_ctr;
     bool     rx_encrypted;         /* the line being dispatched arrived in an ENC: frame */
-
-    /* This connection ran the anyone-can-PWSET bootstrap route (device had no
-     * password at the time). Lets it PWCLEAR back to open once it has enrolled
-     * itself, even without the OWNER role — see owner_commands.c dispatch —
-     * so a non-owner visitor that self-records on an open device can hand back
-     * the open state it (temporarily) borrowed, without ever being able to
-     * open a device it did not itself un-password. */
-    bool     bootstrap_claim;
 } local_session_t;
 
 /* Call once from cything_begin() before the TCP server starts. */

@@ -9,7 +9,10 @@
  * connection's local_session_t.
  *
  *   app -> PAKE1:<b64 A>
- *   dev -> PAKE2:<b64 salt>,<b64 B>        or ERR:NOPW | ERR:LOCKED,<s> | ERR:BADFMT
+ *   dev -> PAKE2:<b64 salt>,<b64 B>        or ERR:LOCKED,<s> | ERR:BADFMT | ERR:NOPW
+ *
+ * While no password is set the device runs this with cy_initial_password;
+ * ERR:NOPW means that verifier could not be derived.
  *   app -> PAKE3:<b64 M1>
  *   dev -> PAKE4:<b64 M2>                  or ERR:BADPW | ERR:SEQ | ERR:BADFMT
  *

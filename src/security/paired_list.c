@@ -127,6 +127,20 @@ int paired_list_find(const char *user_sub, const char *install_id){
     return i;
 }
 
+int paired_list_find_other_install(const char *user_sub, const char *install_id){
+    if(user_sub == NULL || install_id == NULL) return -1;
+    int found = -1;
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    for(int i = 0 ; i < s_list.count && found < 0 ; i++){
+        if(strncmp(s_list.entries[i].user_sub, user_sub, PAIRED_SUB_MAX) == 0 &&
+           strncmp(s_list.entries[i].install_id, install_id, PAIRED_INSTALL_MAX) != 0){
+            found = i;
+        }
+    }
+    xSemaphoreGive(s_mutex);
+    return found;
+}
+
 bool paired_list_get(int index, paired_entry_t *out){
     bool ok = false;
     xSemaphoreTake(s_mutex, portMAX_DELAY);

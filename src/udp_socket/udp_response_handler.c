@@ -46,8 +46,9 @@ int udp_get_info_response(char *reply , size_t reply_size){
 	 *   pake     this firmware speaks the password pairing handshake
 	 *            (security/pake_handler.h): pair with PAKE1..4 + ENROLL, then
 	 *            AUTH1..3 on every connection, instead of connecting bare.
-	 *   nopw     no device password stored yet: PWSET: is open (bootstrap),
-	 *            pairing is impossible until one is set.
+	 *   nopw     no device password stored: open to all. PAKE uses the
+	 *            model's initial password (cy_initial_password); the first
+	 *            phone to ENROLL becomes the owner and sets a real one.
 	 *   authreq  LOCAL_AUTH_ENFORCE is on AND a password is set: protected
 	 *            commands need a paired phone and arrive encrypted; plaintext
 	 *            use is refused. Not advertised on an open (no-password) device

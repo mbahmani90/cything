@@ -30,7 +30,6 @@ static void wipe(local_session_t *s){
     s->paired_index = -1;
     s->rx_len = 0;
     s->peer_ip = 0;
-    s->bootstrap_claim = false;
     s->sock = -1;
 }
 

@@ -110,6 +110,27 @@ static uint32_t now_unix(void){
 
 /* ---- ENROLL ----------------------------------------------------------- */
 
+/* One phone per account: drop every other install of `user_sub` before the
+ * new phone is added. Its live sessions lose their auth and the backend gets
+ * an `unpaired` event, same as UNPAIR. owner_sub is untouched, so when the
+ * owner's account moves to a new phone that phone is still the owner. */
+static void replace_other_installs(const char *user_sub, const char *install){
+    int index;
+    while((index = paired_list_find_other_install(user_sub, install)) >= 0){
+        paired_entry_t e;
+        if(!paired_list_get(index, &e)) break;
+        if(paired_list_remove(index) != ESP_OK){
+            memset(&e, 0, sizeof(e));
+            break;
+        }
+        local_session_on_paired_removed(index);
+        pairing_events_push("unpaired", e.user_sub, e.install_id,
+                            e.role == PAIRED_ROLE_OWNER ? "owner" : "user");
+        CY_LOGI(TCP_SERVER_DB, "local_auth: %s moved phones, %s replaced by %s", e.user_sub, e.install_id, install);
+        memset(&e, 0, sizeof(e));
+    }
+}
+
 static void handle_enroll(local_session_t *s, const char *line, int len){
 
     /* Only inside the PAKE-encrypted session: K_phone is about to be sent. */
@@ -124,12 +145,36 @@ static void handle_enroll(local_session_t *s, const char *line, int len){
     size_t   lens[3];
     char user_sub[PAIRED_SUB_MAX + 1], name[PAIRED_NAME_MAX + 1], install[PAIRED_INSTALL_MAX + 1];
 
+    /* Optional literal ",replace" after the three base64 fields: the user
+     * asked to move this account to this phone. Unambiguous — a 7-character
+     * base64 field is never valid. */
+    static const char REPLACE_SUFFIX[] = ",replace";
+    const int suffix_len = (int)sizeof(REPLACE_SUFFIX) - 1;
+    bool replace = len > suffix_len && memcmp(line + len - suffix_len, REPLACE_SUFFIX, suffix_len) == 0;
+    if(replace) len -= suffix_len;
+
     if(!decode_fields(line, len, ENROLL_PREFIX, bufs, sizes, lens, 3) ||
        !to_cstr(f_sub,  lens[0], user_sub, sizeof(user_sub)) ||
        !to_cstr(f_name, lens[1], name,     sizeof(name))     ||
        !to_cstr(f_inst, lens[2], install,  sizeof(install))){
         send_err(s->sock, "BADFMT");
         return;
+    }
+
+    /* One phone per account. The account already paired from another phone:
+     * only an explicit `,replace` moves it here — otherwise two phones of one
+     * account would keep taking the device from each other on every connect.
+     * On an open device the sub is only asserted (anyone can PAKE with the
+     * public initial password), so whoever knows the owner's sub can move
+     * ownership to their phone while the device is open. Accepted: an open
+     * device is controllable by anyone on the LAN anyway, and the owner closes
+     * the window by setting a password. */
+    if(paired_list_find_other_install(user_sub, install) >= 0){
+        if(!replace){
+            send_err(s->sock, "OTHERPHONE");
+            return;
+        }
+        replace_other_installs(user_sub, install);
     }
 
     uint8_t k_phone[PAIRED_KEY_LEN];

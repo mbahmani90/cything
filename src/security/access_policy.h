@@ -16,10 +16,10 @@
  *   protected  everything else — needs an authenticated socket (LS_AUTH_OK,
  *              or LS_PAKE_OK once enrolled) AND must arrive in an ENC: frame.
  *
- * Bootstrap: while the device has no password at all (fresh unit, or after
- * RESET) nothing can be protected, so every line is public and PWSET: is
- * open — whoever provisions the unit sets the password. Once a password
- * exists, PWSET: is owner-only like the other management commands.
+ * Open device: while no password is stored (fresh unit, after RESET, or after
+ * PWCLEAR) every line is public. PAKE still runs, with the model's initial
+ * password, so the first phone can ENROLL as owner and PWSET encrypted —
+ * PWSET: is owner-only in every state (owner_commands.c).
  *
  * LOCAL_AUTH_ENFORCE (device_config.h) = 0 keeps today's behaviour: every
  * line is accepted and SEND_TO_ALL reaches every socket. The handshake still

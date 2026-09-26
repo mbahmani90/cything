@@ -9,6 +9,7 @@
 #include "esp_srp.h"
 
 #include "common/cy_log.h"
+#include "device_config/cy_config.h"
 
 #define NVS_NS         "cy_sec"
 #define NVS_KEY_SALT   "pw_salt"
@@ -21,6 +22,12 @@ static uint8_t  s_salt[DEVICE_PW_SALT_LEN];
 static uint8_t  s_verifier[DEVICE_PW_VERIFIER_MAX];
 static size_t   s_salt_len = 0;
 static size_t   s_verifier_len = 0;
+
+/* Pair for cy_initial_password, derived on first open-device PAKE; the salt
+ * is fresh every boot. */
+static uint8_t  s_init_salt[DEVICE_PW_SALT_LEN];
+static uint8_t  s_init_verifier[DEVICE_PW_VERIFIER_MAX];
+static size_t   s_init_verifier_len = 0;
 
 /* Lockout state. Times are esp_timer microseconds (monotonic since boot). */
 typedef struct {
@@ -182,11 +189,43 @@ esp_err_t device_password_clear(void){
     return err;
 }
 
+/* Mutex held. */
+static bool derive_initial_locked(void){
+    if(s_init_verifier_len > 0) return true;
+
+    char *salt = NULL;
+    char *ver  = NULL;
+    int   ver_len = 0;
+    esp_err_t err = esp_srp_gen_salt_verifier(DEVICE_PW_SRP_IDENTITY, strlen(DEVICE_PW_SRP_IDENTITY),
+                                              cy_initial_password, (int)strlen(cy_initial_password),
+                                              &salt, DEVICE_PW_SALT_LEN,
+                                              &ver, &ver_len);
+    bool ok = (err == ESP_OK && ver_len > 0 && ver_len <= DEVICE_PW_VERIFIER_MAX);
+    if(ok){
+        memcpy(s_init_salt, salt, DEVICE_PW_SALT_LEN);
+        memcpy(s_init_verifier, ver, (size_t)ver_len);
+        s_init_verifier_len = (size_t)ver_len;
+    }else{
+        CY_LOGE(TCP_SERVER_DB, "device_password: initial-password verifier failed: %s", esp_err_to_name(err));
+    }
+    free(salt);
+    free(ver);
+    return ok;
+}
+
 bool device_password_get(const uint8_t **salt, size_t *salt_len,
                          const uint8_t **verifier, size_t *verifier_len){
-    if(!device_password_is_set()) return false;
-    *salt = s_salt;             *salt_len = s_salt_len;
-    *verifier = s_verifier;     *verifier_len = s_verifier_len;
+    if(device_password_is_set()){
+        *salt = s_salt;             *salt_len = s_salt_len;
+        *verifier = s_verifier;     *verifier_len = s_verifier_len;
+        return true;
+    }
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    bool ok = derive_initial_locked();
+    xSemaphoreGive(s_mutex);
+    if(!ok) return false;
+    *salt = s_init_salt;            *salt_len = DEVICE_PW_SALT_LEN;
+    *verifier = s_init_verifier;    *verifier_len = s_init_verifier_len;
     return true;
 }
 
@@ -206,6 +245,7 @@ static ip_slot_t *ip_slot(uint32_t ip){
 }
 
 uint32_t device_password_lock_remaining_s(uint32_t peer_ip){
+    if(!device_password_is_set()) return 0;
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     uint32_t g = remaining_s(s_global_until_us);
     uint32_t p = 0;
@@ -217,6 +257,8 @@ uint32_t device_password_lock_remaining_s(uint32_t peer_ip){
 }
 
 void device_password_note_failure(uint32_t peer_ip){
+    /* A wrong guess at the public initial password is not an attack. */
+    if(!device_password_is_set()) return;
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
     ip_slot_t *slot = ip_slot(peer_ip);

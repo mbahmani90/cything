@@ -50,6 +50,11 @@ int  paired_list_count(void);
 /* Index of the entry for (user_sub, install_id), or -1. */
 int  paired_list_find(const char *user_sub, const char *install_id);
 
+/* Index of an entry of `user_sub` whose install_id is NOT `install_id` — the
+ * same account on another phone — or -1. One phone per account: ENROLL
+ * removes these before adding the new phone. */
+int  paired_list_find_other_install(const char *user_sub, const char *install_id);
+
 /* Copy entry `index` into *out. False if the index is out of range. */
 bool paired_list_get(int index, paired_entry_t *out);
 

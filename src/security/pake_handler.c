@@ -69,10 +69,6 @@ static void handle_pake1(local_session_t *s, const char *line, int len){
      * starts over. See local_session_reset_handshake(). */
     local_session_reset_handshake(s);
 
-    if(!device_password_is_set()){
-        send_err(s->sock, "NOPW");
-        return;
-    }
     uint32_t lock = device_password_lock_remaining_s(s->peer_ip);
     if(lock > 0){
         char buf[24];
@@ -90,7 +86,10 @@ static void handle_pake1(local_session_t *s, const char *line, int len){
 
     const uint8_t *salt, *ver;
     size_t salt_len, ver_len;
-    device_password_get(&salt, &salt_len, &ver, &ver_len);
+    if(!device_password_get(&salt, &salt_len, &ver, &ver_len)){
+        send_err(s->sock, "NOPW");
+        return;
+    }
 
     esp_srp_handle_t *hd = esp_srp_init(ESP_NG_3072);
     if(hd == NULL){

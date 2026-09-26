@@ -62,6 +62,13 @@ extern const char cy_firmware_version[];
 extern const char cy_major_unique_id[];
 extern const char cy_ota_username[];
 extern const char cy_ota_password[];
+/**
+ * Password the pairing handshake (PAKE) uses while no device password is set,
+ * i.e. while the device is open to all. Public by design: it only encrypts the
+ * session, so the owner's first PWSET never travels in plaintext. The phone app
+ * reads the same value from the model (DefinedDevice). 8..64 bytes.
+ */
+extern const char cy_initial_password[];
 
 /**
  * How many bytes of an incoming datagram must match cy_scan_command for it to

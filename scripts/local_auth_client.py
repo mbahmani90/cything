@@ -10,7 +10,7 @@ so the firmware can be exercised before the Android side exists:
     auth    AUTH1..3 reconnect with a K_phone (nonce/HMAC mutual auth, HKDF)
     list    (owner) print the paired list          — auth first, then LIST
     revoke  (owner) remove a paired phone          — auth first, then REVOKE:
-    pwset   (owner, or anyone while no password)   — PWSET: a new password
+    pwset   (owner) set a new password         — auth first, then PWSET:
     reset   (owner) wipe paired list + password    — auth first, then RESET
 
 The SRP maths is ~40 lines of pow() on the RFC 5054 3072-bit group with
@@ -208,7 +208,9 @@ def cmd_pair(args) -> int:
 
         # ENROLL: identity goes only now, after the device proved itself,
         # inside the K_pake-encrypted session (ENROLLED carries K_phone).
-        ls.send_line("ENROLL:" + ",".join(b64(x.encode()) for x in (args.sub, args.name, args.install)))
+        # ",replace" moves this account here from its other phone (one phone per account).
+        ls.send_line("ENROLL:" + ",".join(b64(x.encode()) for x in (args.sub, args.name, args.install))
+                     + (",replace" if args.replace else ""))
         reply = ls.recv_line()
         if not reply.startswith("ENROLLED:"):
             print(f"enroll failed: {reply}")
@@ -316,12 +318,9 @@ def cmd_revoke(args) -> int:
 def cmd_pwset(args) -> int:
     ls = LineSocket(args.host, args.port, args.verbose)
     try:
-        if args.k_phone:
-            rc = authenticate(ls, args)
-            if rc:
-                return rc
-        else:
-            print("no --k-phone: bootstrap PWSET (only works while the device has no password)")
+        rc = authenticate(ls, args)
+        if rc:
+            return rc
         ls.send_line("PWSET:" + b64(args.new_password.encode()))
         reply = ls.recv_line()
         print(reply)
@@ -372,6 +371,8 @@ def main(argv=None) -> int:
     sp.add_argument("host")
     sp.add_argument("password")
     sp.add_argument("--name", default="Python client", help="display name shown in the paired list")
+    sp.add_argument("--replace", action="store_true",
+                    help="this account is paired from another phone: replace it (else ERR:OTHERPHONE)")
     identity_args(sp)
     sp.set_defaults(func=cmd_pair)
 
@@ -397,10 +398,10 @@ def main(argv=None) -> int:
     identity_args(sp)
     sp.set_defaults(func=cmd_revoke)
 
-    sp = sub.add_parser("pwset", help="set the device password (owner; or anyone while none is set)")
+    sp = sub.add_parser("pwset", help="(owner) set the device password")
     sp.add_argument("host")
     sp.add_argument("new_password")
-    sp.add_argument("--k-phone", dest="k_phone", default="", help="the owner's K_phone, hex (omit for bootstrap)")
+    sp.add_argument("--k-phone", dest="k_phone", required=True, help="the owner's K_phone, hex")
     identity_args(sp)
     sp.set_defaults(func=cmd_pwset)
 

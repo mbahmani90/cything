@@ -25,6 +25,10 @@
  *     any mix of IPs lock the device the same way. Persisted, so a power
  *     cycle does not reset it.
  * A successful pairing clears both counters.
+ *
+ * Open device (no password set): PAKE runs with the model's public initial
+ * password (cy_initial_password, device_config/cy_config.h) instead, so the
+ * session is still encrypted. No rate limiting then — the password is public.
  */
 
 #define DEVICE_PW_MIN_LEN          8
@@ -45,8 +49,8 @@
  * cything_begin() after NVS is up, before the TCP server starts. */
 void device_password_init(void);
 
-/* True once a password has been set (salt + verifier present). A device
- * without one refuses PAKE1 with ERR:NOPW. */
+/* True once a password has been set (salt + verifier present). Without one
+ * the device is open to all and PAKE uses cy_initial_password. */
 bool device_password_is_set(void);
 
 /* Derive and store a new salt/verifier for `password` (not NUL-terminated,
@@ -57,11 +61,14 @@ esp_err_t device_password_set(const char *password, size_t len);
 /* Remove the password (part of RESET). */
 esp_err_t device_password_clear(void);
 
-/* Borrow the stored pair. Pointers stay valid until the next set/clear. */
+/* Borrow the pair PAKE should use: the stored one, or while none is set the
+ * pair for cy_initial_password (derived on first use). False only if that
+ * derivation failed. Pointers stay valid until the next set/clear. */
 bool device_password_get(const uint8_t **salt, size_t *salt_len,
                          const uint8_t **verifier, size_t *verifier_len);
 
-/* Seconds until `peer_ip` may attempt a pairing, 0 if it may now. */
+/* Seconds until `peer_ip` may attempt a pairing, 0 if it may now (always 0
+ * while no password is set). */
 uint32_t device_password_lock_remaining_s(uint32_t peer_ip);
 
 /* Record the outcome of a proof check from `peer_ip`. */
