@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Cut a CyThing release: one version number into the three places that carry
+# Cut a CyThing release: one version number into the four places that carry
 # it, one commit, one annotated tag, pushed. See doc/git-workflow.md "Release".
 #
 #   scripts/release.sh 1.1.0
@@ -8,6 +8,8 @@
 # Updates
 #   library.properties            version=1.1.0          (Arduino Library Manager)
 #   library.json                  "version": "1.1.0"     (PlatformIO)
+#   components/cything/idf_component.yml  version: "1.1.0"  (ESP Component
+#                                                          Registry manifest)
 #   src/device_config/device_config.h  FIRMWARE_VERSION   (what the device reports
 #                                                          in GET_INFO / MQTT get-info)
 # then commits "Release 1.1.0", tags 1.1.0 and pushes main + the tag.
@@ -43,16 +45,19 @@ fi
 # sed -i with a backup suffix works the same on macOS and GNU sed.
 sed -i.bak "s/^version=.*/version=$VERSION/" library.properties
 sed -i.bak "s/\"version\": *\"[^\"]*\"/\"version\": \"$VERSION\"/" library.json
+sed -i.bak "s/^version: .*/version: \"$VERSION\"/" components/cything/idf_component.yml
 sed -i.bak "s/^#define FIRMWARE_VERSION .*/#define FIRMWARE_VERSION \"$VERSION\"/" src/device_config/device_config.h
-rm -f library.properties.bak library.json.bak src/device_config/device_config.h.bak
+rm -f library.properties.bak library.json.bak components/cything/idf_component.yml.bak \
+      src/device_config/device_config.h.bak
 
 grep -q "^version=$VERSION$" library.properties
 grep -q "\"version\": \"$VERSION\"" library.json
+grep -q "^version: \"$VERSION\"$" components/cything/idf_component.yml
 grep -q "^#define FIRMWARE_VERSION \"$VERSION\"$" src/device_config/device_config.h
 
-git add library.properties library.json src/device_config/device_config.h
+git add library.properties library.json components/cything/idf_component.yml src/device_config/device_config.h
 if git diff --cached --quiet; then
-    echo "release.sh: all three files already say $VERSION; tagging HEAD as is"
+    echo "release.sh: all four files already say $VERSION; tagging HEAD as is"
 else
     git commit -q -m "Release $VERSION"
 fi
