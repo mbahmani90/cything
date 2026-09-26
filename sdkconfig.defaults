@@ -14,3 +14,9 @@ CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y
 # CONFIG_BT_NIMBLE_ROLE_CENTRAL is not set
 # CONFIG_BT_NIMBLE_ROLE_OBSERVER is not set
 CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+# Free the mbedTLS record buffers (16 KB in + 4 KB out) while the MQTT/TLS
+# link is idle, and the CA/config data after the handshake: the heap they held
+# is what a phone's SRP-3072 PAKE and its 10 KB connection task need.
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT=y

@@ -1,3 +1,4 @@
+#include "esp_heap_caps.h"
 #include "pake_handler.h"
 
 #include <stdio.h>
@@ -105,9 +106,13 @@ static void handle_pake1(local_session_t *s, const char *line, int len){
     /* esp_srp rejects A == 0 mod N here (the classic forced-zero-secret attack). */
     if(err == ESP_OK) err = esp_srp_get_session_key(hd, (char *)A, len_A, &K, &len_K);
     if(err != ESP_OK || B == NULL || K == NULL || len_K < sizeof(s->key) || len_B > SRP_BYTES_MAX){
-        CY_LOGW(TCP_SERVER_DB, "pake: setup failed: %s", esp_err_to_name(err));
+        /* In practice this is the heap: SRP-3072 needs several KB in one
+         * block. Say so (the phone retries) rather than blame the message. */
+        CY_LOGW(TCP_SERVER_DB, "pake: setup failed: %s (heap %u, largest %u)", esp_err_to_name(err),
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         esp_srp_free(hd);
-        send_err(s->sock, "BADFMT");
+        send_err(s->sock, "NOMEM");
         return;
     }
 

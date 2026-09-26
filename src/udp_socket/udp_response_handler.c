@@ -52,13 +52,18 @@ int udp_get_info_response(char *reply , size_t reply_size){
 	 *   authreq  LOCAL_AUTH_ENFORCE is on AND a password is set: protected
 	 *            commands need a paired phone and arrive encrypted; plaintext
 	 *            use is refused. Not advertised on an open (no-password) device
-	 *            — there is nothing to enforce, so it behaves openly. */
+	 *            — there is nothing to enforce, so it behaves openly.
+	 *   email    the paired list is one entry per account labelled by its
+	 *            email: ENROLL:<sub>,<email>, AUTH1:<sub>,<N_p>, REVOKE:<sub>
+	 *            and 4-field PAIRED lines. The legacy installId / displayName
+	 *            formats are still accepted from older apps. */
 	char provisioning_caps[40] = "pake";
 	if(claim_credentials_present())   strlcat(provisioning_caps, "|claim",   sizeof(provisioning_caps));
 	if(!device_password_is_set())     strlcat(provisioning_caps, "|nopw",    sizeof(provisioning_caps));
 #if LOCAL_AUTH_ENFORCE == 1
 	if(device_password_is_set())      strlcat(provisioning_caps, "|authreq", sizeof(provisioning_caps));
 #endif
+	strlcat(provisioning_caps, "|email", sizeof(provisioning_caps));
 
 	int len = snprintf(reply , reply_size , "%s,%s,%s,%s,%s,%s,%s,%s,%s" , device_wifi_info,
 		source_terminal_id, cy_device_name, cy_device_type, device_id, provision_state,

@@ -91,6 +91,15 @@ static bool decode_fields(const char *line, int len, const char *prefix,
     return true;
 }
 
+/* Number of ','-separated fields after `prefix` (0 if there is no payload). */
+static int count_fields(const char *line, int len, const char *prefix){
+    int plen = strlen(prefix);
+    if(len <= plen) return 0;
+    int n = 1;
+    for(int i = plen ; i < len ; i++) if(line[i] == ',') n++;
+    return n;
+}
+
 /* Decoded text field -> NUL-terminated C string, refusing embedded NULs
  * and control characters. */
 static bool to_cstr(const uint8_t *in, size_t n, char *out, size_t out_size){
@@ -110,80 +119,54 @@ static uint32_t now_unix(void){
 
 /* ---- ENROLL ----------------------------------------------------------- */
 
-/* One phone per account: drop every other install of `user_sub` before the
- * new phone is added. Its live sessions lose their auth and the backend gets
- * an `unpaired` event, same as UNPAIR. owner_sub is untouched, so when the
- * owner's account moves to a new phone that phone is still the owner. */
-static void replace_other_installs(const char *user_sub, const char *install){
-    int index;
-    while((index = paired_list_find_other_install(user_sub, install)) >= 0){
-        paired_entry_t e;
-        if(!paired_list_get(index, &e)) break;
-        if(paired_list_remove(index) != ESP_OK){
-            memset(&e, 0, sizeof(e));
-            break;
-        }
-        local_session_on_paired_removed(index);
-        pairing_events_push("unpaired", e.user_sub, e.install_id,
-                            e.role == PAIRED_ROLE_OWNER ? "owner" : "user");
-        CY_LOGI(TCP_SERVER_DB, "local_auth: %s moved phones, %s replaced by %s", e.user_sub, e.install_id, install);
-        memset(&e, 0, sizeof(e));
-    }
-}
-
 static void handle_enroll(local_session_t *s, const char *line, int len){
 
-    /* Only inside the PAKE-encrypted session: K_phone is about to be sent. */
+    /* Only inside the PAKE-encrypted session: K_account is about to be sent. */
     if(s->state != LS_PAKE_OK || !s->rx_encrypted){
         send_err(s->sock, "SEQ");
         return;
     }
 
-    uint8_t f_sub[PAIRED_SUB_MAX + 1], f_name[PAIRED_NAME_MAX + 1], f_inst[PAIRED_INSTALL_MAX + 1];
-    uint8_t *bufs[3]  = { f_sub, f_name, f_inst };
-    size_t   sizes[3] = { sizeof(f_sub), sizeof(f_name), sizeof(f_inst) };
+    /* ENROLL:<sub>,<email>. Older apps send ENROLL:<sub>,<displayName>,<installId>
+     * [,replace]: installId is checked for format and dropped, and displayName
+     * is kept as the label until the app sends an email. */
+    uint8_t f_sub[PAIRED_SUB_MAX + 1], f_email[PAIRED_EMAIL_MAX + 1], f_inst[PAIRED_SUB_MAX + 1];
+    uint8_t *bufs[3]  = { f_sub, f_email, f_inst };
+    size_t   sizes[3] = { sizeof(f_sub), sizeof(f_email), sizeof(f_inst) };
     size_t   lens[3];
-    char user_sub[PAIRED_SUB_MAX + 1], name[PAIRED_NAME_MAX + 1], install[PAIRED_INSTALL_MAX + 1];
+    char user_sub[PAIRED_SUB_MAX + 1], email[PAIRED_EMAIL_MAX + 1];
 
-    /* Optional literal ",replace" after the three base64 fields: the user
-     * asked to move this account to this phone. Unambiguous — a 7-character
-     * base64 field is never valid. */
+    /* A literal ",replace" (legacy, one-phone-per-account app) is accepted
+     * and ignored. Unambiguous — a 7-character base64 field is never valid. */
     static const char REPLACE_SUFFIX[] = ",replace";
     const int suffix_len = (int)sizeof(REPLACE_SUFFIX) - 1;
-    bool replace = len > suffix_len && memcmp(line + len - suffix_len, REPLACE_SUFFIX, suffix_len) == 0;
-    if(replace) len -= suffix_len;
+    if(len > suffix_len && memcmp(line + len - suffix_len, REPLACE_SUFFIX, suffix_len) == 0) len -= suffix_len;
 
-    if(!decode_fields(line, len, ENROLL_PREFIX, bufs, sizes, lens, 3) ||
-       !to_cstr(f_sub,  lens[0], user_sub, sizeof(user_sub)) ||
-       !to_cstr(f_name, lens[1], name,     sizeof(name))     ||
-       !to_cstr(f_inst, lens[2], install,  sizeof(install))){
+    int nfields = count_fields(line, len, ENROLL_PREFIX);
+    if((nfields != 2 && nfields != 3) ||
+       !decode_fields(line, len, ENROLL_PREFIX, bufs, sizes, lens, nfields) ||
+       !to_cstr(f_sub,   lens[0], user_sub, sizeof(user_sub)) ||
+       !to_cstr(f_email, lens[1], email,    sizeof(email))){
         send_err(s->sock, "BADFMT");
         return;
     }
 
-    /* One phone per account. The account already paired from another phone:
-     * only an explicit `,replace` moves it here — otherwise two phones of one
-     * account would keep taking the device from each other on every connect.
-     * On an open device the sub is only asserted (anyone can PAKE with the
-     * public initial password), so whoever knows the owner's sub can move
-     * ownership to their phone while the device is open. Accepted: an open
-     * device is controllable by anyone on the LAN anyway, and the owner closes
-     * the window by setting a password. */
-    if(paired_list_find_other_install(user_sub, install) >= 0){
-        if(!replace){
-            send_err(s->sock, "OTHERPHONE");
-            return;
-        }
-        replace_other_installs(user_sub, install);
-    }
-
-    uint8_t k_phone[PAIRED_KEY_LEN];
-    esp_fill_random(k_phone, sizeof(k_phone));
+    /* One key per account. An account that is already paired gets its
+     * existing K_account back — its phones share it, and the app escrows it
+     * in the backend — so a second phone (or a reinstalled one) never takes
+     * the device from the first, and never needs anything but this step. On an
+     * open device the sub is only asserted (anyone can PAKE with the public
+     * initial password), so whoever knows the owner's sub can get the owner's
+     * key while the device is open — as they can control it anyway. PWSET
+     * rotates the owner's key (owner_commands.c), so such a key dies the
+     * moment the owner locks the device. */
+    uint8_t k_account[PAIRED_KEY_LEN];
+    esp_fill_random(k_account, sizeof(k_account));
 
     paired_role_t role;
-    int index = paired_list_add(user_sub, install, name, k_phone, now_unix(), &role);
+    int index = paired_list_add(user_sub, email, k_account, now_unix(), &role);
     if(index < 0){
-        memset(k_phone, 0, sizeof(k_phone));
+        memset(k_account, 0, sizeof(k_account));
         send_err(s->sock, "FULL");
         return;
     }
@@ -193,14 +176,14 @@ static void handle_enroll(local_session_t *s, const char *line, int len){
     char reply[sizeof("ENROLLED:") + B64_MAX(PAIRED_KEY_LEN) + sizeof(",owner")];
     size_t n = 0;
     int pos = snprintf(reply, sizeof(reply), "ENROLLED:");
-    mbedtls_base64_encode((unsigned char *)reply + pos, sizeof(reply) - pos, &n, k_phone, sizeof(k_phone));
+    mbedtls_base64_encode((unsigned char *)reply + pos, sizeof(reply) - pos, &n, k_account, sizeof(k_account));
     pos += n;
     snprintf(reply + pos, sizeof(reply) - pos, ",%s", role == PAIRED_ROLE_OWNER ? "owner" : "user");
-    memset(k_phone, 0, sizeof(k_phone));
+    memset(k_account, 0, sizeof(k_account));
 
     security_send_line(s->sock, reply);
-    pairing_events_push("paired", user_sub, install, role == PAIRED_ROLE_OWNER ? "owner" : "user");
-    CY_LOGI(TCP_SERVER_DB, "local_auth: sock %d enrolled %s (%s) as %s", s->sock, user_sub, name,
+    pairing_events_push("paired", user_sub, role == PAIRED_ROLE_OWNER ? "owner" : "user");
+    CY_LOGI(TCP_SERVER_DB, "local_auth: sock %d enrolled %s (%s) as %s", s->sock, user_sub, email,
             role == PAIRED_ROLE_OWNER ? "owner" : "user");
 }
 
@@ -212,22 +195,30 @@ static void handle_auth1(local_session_t *s, const char *line, int len){
      * starts over (mirror of PAKE1); see local_session_reset_handshake(). */
     local_session_reset_handshake(s);
 
-    uint8_t f_sub[PAIRED_SUB_MAX + 1], f_inst[PAIRED_INSTALL_MAX + 1], f_np[LOCAL_AUTH_NONCE_LEN + 1];
-    uint8_t *bufs[3]  = { f_sub, f_inst, f_np };
-    size_t   sizes[3] = { sizeof(f_sub), sizeof(f_inst), sizeof(f_np) };
+    /* AUTH1:<sub>,<N_p>. Older apps send AUTH1:<sub>,<installId>,<N_p>: the
+     * installId is decoded (format check) and ignored — every phone of the
+     * account authenticates with the account's key. */
+    uint8_t f_sub[PAIRED_SUB_MAX + 1], f_inst[PAIRED_SUB_MAX + 1], f_np[LOCAL_AUTH_NONCE_LEN + 1];
     size_t   lens[3];
-    char user_sub[PAIRED_SUB_MAX + 1], install[PAIRED_INSTALL_MAX + 1];
+    char user_sub[PAIRED_SUB_MAX + 1];
 
-    if(!decode_fields(line, len, AUTH1_PREFIX, bufs, sizes, lens, 3) ||
-       !to_cstr(f_sub,  lens[0], user_sub, sizeof(user_sub)) ||
-       !to_cstr(f_inst, lens[1], install,  sizeof(install))  ||
-       lens[2] != LOCAL_AUTH_NONCE_LEN){
+    int nfields = count_fields(line, len, AUTH1_PREFIX);
+    uint8_t *bufs[3]  = { f_sub, f_np, NULL };
+    size_t   sizes[3] = { sizeof(f_sub), sizeof(f_np), 0 };
+    if(nfields == 3){
+        bufs[1] = f_inst; sizes[1] = sizeof(f_inst);
+        bufs[2] = f_np;   sizes[2] = sizeof(f_np);
+    }
+    if((nfields != 2 && nfields != 3) ||
+       !decode_fields(line, len, AUTH1_PREFIX, bufs, sizes, lens, nfields) ||
+       !to_cstr(f_sub, lens[0], user_sub, sizeof(user_sub)) ||
+       lens[nfields - 1] != LOCAL_AUTH_NONCE_LEN){
         send_err(s->sock, "BADFMT");
         return;
     }
 
     paired_entry_t entry;
-    int index = paired_list_find(user_sub, install);
+    int index = paired_list_find(user_sub);
     if(index < 0 || !paired_list_get(index, &entry)){
         send_err(s->sock, "UNKNOWN");
         return;
@@ -235,7 +226,7 @@ static void handle_auth1(local_session_t *s, const char *line, int len){
 
     memcpy(s->nonce_phone, f_np, LOCAL_AUTH_NONCE_LEN);
     esp_fill_random(s->nonce_dev, LOCAL_AUTH_NONCE_LEN);
-    memcpy(s->key, entry.key, sizeof(s->key));      /* K_phone until AUTHOK */
+    memcpy(s->key, entry.key, sizeof(s->key));      /* K_account until AUTHOK */
     memset(&entry, 0, sizeof(entry));
     s->paired_index = index;
     s->state = LS_AUTH_WAIT_PROOF;
@@ -283,7 +274,7 @@ static void handle_auth3(local_session_t *s, const char *line, int len){
         return;
     }
 
-    /* K_session replaces K_phone in the slot; the paired entry keeps K_phone. */
+    /* K_session replaces K_account in the slot; the paired entry keeps K_account. */
     uint8_t salt[2 * LOCAL_AUTH_NONCE_LEN];
     memcpy(salt, s->nonce_phone, LOCAL_AUTH_NONCE_LEN);
     memcpy(salt + LOCAL_AUTH_NONCE_LEN, s->nonce_dev, LOCAL_AUTH_NONCE_LEN);

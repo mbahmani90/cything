@@ -6,10 +6,10 @@ Talks the same line protocol the phone app will, against a flashed device,
 so the firmware can be exercised before the Android side exists:
 
     pair    PAKE1..4 with the device password (SRP-6a, matches esp_srp), then
-            ENROLL this "phone" — prints K_phone, keep it for `auth`
-    auth    AUTH1..3 reconnect with a K_phone (nonce/HMAC mutual auth, HKDF)
+            ENROLL this "phone" — prints K_account, keep it for `auth`
+    auth    AUTH1..3 reconnect with a K_account (nonce/HMAC mutual auth, HKDF)
     list    (owner) print the paired list          — auth first, then LIST
-    revoke  (owner) remove a paired phone          — auth first, then REVOKE:
+    revoke  (owner) remove a paired account          — auth first, then REVOKE:
     pwset   (owner) set a new password         — auth first, then PWSET:
     reset   (owner) wipe paired list + password    — auth first, then RESET
 
@@ -20,8 +20,8 @@ minimal-length big-endian integers). The only non-stdlib dependency is
     ~/.espressif/tools/python/v6.0.2/venv/bin/python scripts/local_auth_client.py ...
 
 Usage:
-    scripts/local_auth_client.py pair <device-ip> <password> [--sub S] [--install I] [--name N]
-    scripts/local_auth_client.py auth <device-ip> <k_phone-hex> [--sub S] [--install I] [--send LINE ...]
+    scripts/local_auth_client.py pair <device-ip> <password> [--sub S] [--email E]
+    scripts/local_auth_client.py auth <device-ip> <k_account-hex> [--sub S] [--send LINE ...]
 """
 
 import argparse
@@ -207,18 +207,17 @@ def cmd_pair(args) -> int:
         ls.start_encryption(k_pake)
 
         # ENROLL: identity goes only now, after the device proved itself,
-        # inside the K_pake-encrypted session (ENROLLED carries K_phone).
-        # ",replace" moves this account here from its other phone (one phone per account).
-        ls.send_line("ENROLL:" + ",".join(b64(x.encode()) for x in (args.sub, args.name, args.install))
-                     + (",replace" if args.replace else ""))
+        # inside the K_pake-encrypted session (ENROLLED carries K_account).
+        # An account that is already paired gets its existing key back (one key per account).
+        ls.send_line("ENROLL:" + ",".join(b64(x.encode()) for x in (args.sub, args.email)))
         reply = ls.recv_line()
         if not reply.startswith("ENROLLED:"):
             print(f"enroll failed: {reply}")
             return 5
         key_b64, _, role = reply[len("ENROLLED:"):].partition(",")
-        k_phone = unb64(key_b64)
+        k_account = unb64(key_b64)
         print(f"enrolled as {role}")
-        print(f"K_phone = {k_phone.hex()}   (pass to: auth {args.host} {k_phone.hex()} --sub {args.sub} --install {args.install})")
+        print(f"K_account = {k_account.hex()}   (pass to: auth {args.host} {k_account.hex()} --sub {args.sub})")
         return 0
     finally:
         ls.close()
@@ -235,29 +234,29 @@ def hkdf32(ikm: bytes, salt: bytes, info: bytes) -> bytes:
 
 def authenticate(ls: LineSocket, args) -> int:
     """AUTH1..3 on an open socket; switches it to K_session. 0 on success."""
-    k_phone = bytes.fromhex(args.k_phone)
-    if len(k_phone) != 32:
-        print("k_phone must be 32 bytes (64 hex chars)")
+    k_account = bytes.fromhex(args.k_account)
+    if len(k_account) != 32:
+        print("k_account must be 32 bytes (64 hex chars)")
         return 2
     n_p = secrets.token_bytes(16)
-    ls.send_line("AUTH1:" + ",".join([b64(args.sub.encode()), b64(args.install.encode()), b64(n_p)]))
+    ls.send_line("AUTH1:" + ",".join([b64(args.sub.encode()), b64(n_p)]))
     reply = ls.recv_line()
     if not reply.startswith("AUTH2:"):
         print(f"auth refused: {reply}")
         return 3
     nd_b64, _, mac_b64 = reply[len("AUTH2:"):].partition(",")
     n_d, dev_mac = unb64(nd_b64), unb64(mac_b64)
-    if not hmac.compare_digest(dev_mac, hmac256(k_phone, b"dev" + n_p + n_d)):
-        print("device proof does NOT verify — not the device this K_phone was enrolled on")
+    if not hmac.compare_digest(dev_mac, hmac256(k_account, b"dev" + n_p + n_d)):
+        print("device proof does NOT verify — not the device this K_account was enrolled on")
         return 4
     print("device proof OK")
 
-    ls.send_line("AUTH3:" + b64(hmac256(k_phone, b"phn" + n_d + n_p)))
+    ls.send_line("AUTH3:" + b64(hmac256(k_account, b"phn" + n_d + n_p)))
     reply = ls.recv_line()
     if reply != "AUTHOK":
         print(f"phone proof rejected: {reply}")
         return 5
-    k_session = hkdf32(k_phone, n_p + n_d, b"cy-local-v1")
+    k_session = hkdf32(k_account, n_p + n_d, b"cy-local-v1")
     print("authenticated")
     print(f"K_session = {k_session.hex()}")
     ls.start_encryption(k_session)
@@ -290,13 +289,13 @@ def cmd_list(args) -> int:
         while True:
             reply = ls.recv_line()
             if reply.startswith("PAIREND:"):
-                print(f"{reply[len('PAIREND:'):]} paired phone(s)")
+                print(f"{reply[len('PAIREND:'):]} paired account(s)")
                 return 0
             if not reply.startswith("PAIRED:"):
                 print(f"unexpected: {reply}")
                 return 3
-            sub, inst, name, at, role = reply[len("PAIRED:"):].split(",")
-            print(f"  {role:5}  {unb64(sub).decode():36}  {unb64(inst).decode():16}  {unb64(name).decode()!r}  at={at}")
+            sub, email, at, role = reply[len("PAIRED:"):].split(",")
+            print(f"  {role:5}  {unb64(sub).decode():36}  {unb64(email).decode():32}  at={at}")
     finally:
         ls.close()
 
@@ -307,7 +306,7 @@ def cmd_revoke(args) -> int:
         rc = authenticate(ls, args)
         if rc:
             return rc
-        ls.send_line("REVOKE:" + b64(args.revoke_sub.encode()) + "," + b64(args.revoke_install.encode()))
+        ls.send_line("REVOKE:" + b64(args.revoke_sub.encode()))
         reply = ls.recv_line()
         print(reply)
         return 0 if reply == "ACK" else 3
@@ -365,20 +364,17 @@ def main(argv=None) -> int:
     def identity_args(sp):
         sp.add_argument("--port", type=int, default=1234)
         sp.add_argument("--sub", default="test-user-sub", help="Cognito sub of the pretend user")
-        sp.add_argument("--install", default="pytest-install", help="install id of the pretend phone")
 
     sp = sub.add_parser("pair", help="PAKE1..4 with the device password, then ENROLL")
     sp.add_argument("host")
     sp.add_argument("password")
-    sp.add_argument("--name", default="Python client", help="display name shown in the paired list")
-    sp.add_argument("--replace", action="store_true",
-                    help="this account is paired from another phone: replace it (else ERR:OTHERPHONE)")
+    sp.add_argument("--email", default="python-client@example.com", help="account email shown to the owner in LIST")
     identity_args(sp)
     sp.set_defaults(func=cmd_pair)
 
-    sp = sub.add_parser("auth", help="AUTH1..3 reconnect with a K_phone from a previous pair")
+    sp = sub.add_parser("auth", help="AUTH1..3 reconnect with a K_account from a previous pair")
     sp.add_argument("host")
-    sp.add_argument("k_phone", help="hex, as printed by pair")
+    sp.add_argument("k_account", help="hex, as printed by pair")
     sp.add_argument("--send", action="append", metavar="LINE",
                     help="after AUTHOK, send LINE inside an ENC: frame and print the reply (repeatable)")
     identity_args(sp)
@@ -386,34 +382,33 @@ def main(argv=None) -> int:
 
     sp = sub.add_parser("list", help="(owner) print the paired list")
     sp.add_argument("host")
-    sp.add_argument("k_phone", help="the owner's K_phone, hex")
+    sp.add_argument("k_account", help="the owner's K_account, hex")
     identity_args(sp)
     sp.set_defaults(func=cmd_list)
 
-    sp = sub.add_parser("revoke", help="(owner) remove a paired phone")
+    sp = sub.add_parser("revoke", help="(owner) remove a paired account")
     sp.add_argument("host")
-    sp.add_argument("k_phone", help="the owner's K_phone, hex")
+    sp.add_argument("k_account", help="the owner's K_account, hex")
     sp.add_argument("revoke_sub", help="userSub of the entry to remove")
-    sp.add_argument("revoke_install", help="installId of the entry to remove")
     identity_args(sp)
     sp.set_defaults(func=cmd_revoke)
 
     sp = sub.add_parser("pwset", help="(owner) set the device password")
     sp.add_argument("host")
     sp.add_argument("new_password")
-    sp.add_argument("--k-phone", dest="k_phone", required=True, help="the owner's K_phone, hex")
+    sp.add_argument("--k-account", dest="k_account", required=True, help="the owner's K_account, hex")
     identity_args(sp)
     sp.set_defaults(func=cmd_pwset)
 
     sp = sub.add_parser("unpair", help="remove THIS phone's own pairing (delete from my phone)")
     sp.add_argument("host")
-    sp.add_argument("k_phone", help="this phone's K_phone, hex")
+    sp.add_argument("k_account", help="this account's K_account, hex")
     identity_args(sp)
     sp.set_defaults(func=cmd_unpair)
 
     sp = sub.add_parser("reset", help="(owner) wipe the paired list and the password")
     sp.add_argument("host")
-    sp.add_argument("k_phone", help="the owner's K_phone, hex")
+    sp.add_argument("k_account", help="the owner's K_account, hex")
     identity_args(sp)
     sp.set_defaults(func=cmd_reset)
 

@@ -79,6 +79,13 @@ void local_session_release(int sock);
 /* Number of slots in use (diagnostics). */
 int local_session_count(void);
 
+/* Shut down (SHUT_RDWR) every live socket from `peer_ip`. Their receive
+ * tasks then see the connection end and release the slot themselves. Used by
+ * the listener when it is at its connection cap: a phone that reconnects
+ * replaces its own stale connection instead of being refused. Returns how
+ * many sockets were shut down. */
+int local_session_shutdown_peer(uint32_t peer_ip);
+
 /* The paired list dropped entry `index` (REVOKE): any session on that entry
  * loses its authentication (key wiped, back to LS_NEW — its next line
  * fails and the phone has to re-pair), and sessions on later entries have
