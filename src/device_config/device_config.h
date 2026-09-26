@@ -3,7 +3,7 @@
 #define TAG "Cy"
 
 #define HARDWARE_VERSION "1.0"
-#define FIRMWARE_VERSION "1.0.1"
+#define FIRMWARE_VERSION "1.1.0"
 
 #define SET_ROUTER_SSID_PREFIX "ssid:"
 #define SET_ROUTER_SSID_SUFFIX "\n"
