@@ -108,7 +108,7 @@ the current `main`, end to end:
 |---|---|---|
 | 1 | Be on an up-to-date, clean `main` | `git checkout main && git pull` |
 | 2 | Pick the version | given in the phrase (`release on github 1.2.0`) → that; `… minor` / `… major` → bump that part of the latest tag; **bare phrase → PATCH bump** of the latest tag (`1.0.3` → `1.0.4`); no tag yet → `1.0.0` |
-| 3 | Bump the three version fields, commit, tag, push | `scripts/release.sh <version>` |
+| 3 | Bump the four version fields, commit, tag, push | `scripts/release.sh <version>` |
 | 4 | GitHub Release page with generated notes + source ZIP | `gh release create <version> --generate-notes` |
 | 5 | Report | version, commit, tag URL, and the `lib_deps = …git#<version>` line |
 
@@ -122,13 +122,14 @@ confirmation. The script's own guards (clean tree, on `main`, in sync with
 scripts/release.sh 1.1.0
 ```
 
-It puts the one number into the three places that carry it, commits, tags and
+It puts the one number into the four places that carry it, commits, tags and
 pushes:
 
 | File | Field | Read by |
 |---|---|---|
 | `library.properties` | `version=` | Arduino Library Manager (per git tag) |
 | `library.json` | `"version"` | PlatformIO (`pio pkg`, `lib_deps … #1.1.0`) |
+| `components/cything/idf_component.yml` | `version:` | ESP Component Registry manifest (`scripts/pack_component.sh` also passes the version explicitly) |
 | `src/device_config/device_config.h` | `FIRMWARE_VERSION` | the device — `GET_INFO` and MQTT get-info replies |
 
 `partitions/cything-4MB.csv` is duplicated in the phone app
