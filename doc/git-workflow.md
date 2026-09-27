@@ -137,7 +137,12 @@ pushes:
 generated sketch. Change that table and update the app copy in the same breath,
 or downloaded sketches flash against the wrong layout. The same goes for the
 symbol list in `main/cything_config.cpp.example` /
-`examples/Basic/cything_config.ino` and the app's generated `cything_config.ino`.
+`examples/Basic/cything_config.ino` and the app's generated `cything_config.ino`
+and `cything_config.cpp`, and for
+`components/cything/examples/on_off_pin/sdkconfig.defaults`
+(`IDF_SDKCONFIG_DEFAULTS`). The app's `CYTHING_IDF_VERSION` is the version the
+ESP-IDF projects it generates depend on (`mbahmani90/cything^<version>`); raise
+it once a release is on the Component Registry.
 
 then `git commit -m "Release 1.1.0"`, `git tag -a 1.1.0`, `git push origin
 main 1.1.0`. It refuses to run off `main`, on a dirty tree, when local and

@@ -1,3 +1,5 @@
+# The phone app ships a copy of this file in every ESP-IDF project it
+# generates (FirmwareSketchBundle.IDF_SDKCONFIG_DEFAULTS). Keep them in step.
 CONFIG_MBEDTLS_X509_CREATE_C=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"

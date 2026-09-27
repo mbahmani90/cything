@@ -61,6 +61,15 @@ Then:
 
 3. Optionally, add the claim certificate (next section).
 
+### Option 3: let the phone app generate it
+
+In the Cypress Terminal app, open a device model, tap *Push sketch to GitHub*
+and pick **ESP-IDF project**. The app writes the project Option 2 describes —
+plus `main/cything_config.cpp` and the two generated headers carrying the
+channel's network settings — into a private repository named
+`<channel>_<type>_<name>` in your GitHub account (created if it does not
+exist), as a branch with a pull request. Clone it and `idf.py build`.
+
 ## Claim certificate (optional)
 
 The per-model claim certificate and private key go in a **`cert/` directory
