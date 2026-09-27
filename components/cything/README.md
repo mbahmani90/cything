@@ -5,21 +5,61 @@ soft-AP, TCP/UDP local control, AWS IoT MQTT with per-device certificate
 provisioning, and HTTPS OTA. Call `cything_begin()` from `app_main()` and
 implement the two command hooks declared in `CyThingEsp32.h`.
 
+## Getting started
+
+There are two ways to get a CyThing project. `idf.py create-project` is not
+one of them on its own: it takes a project *name* and creates an empty project
+without CyThing.
+
+### Option 1: start from the example (recommended)
+
 ```bash
-idf.py add-dependency "mbahmani90/cything^1.0.0"
+idf.py create-project-from-example "mbahmani90/cything^1.2.0:on_off_pin"
 ```
 
-Or start from the bundled example, which switches GPIO 2 with `on_cmd` /
-`off_cmd` over TCP or MQTT and replies `on_res` / `off_res`:
+This creates a complete, buildable project in `on_off_pin/`: the app code,
+`cert/`, `sdkconfig.defaults`, `partitions.csv`, and CyThing as a dependency.
+The example switches GPIO 2 with `on_cmd` / `off_cmd` over TCP or MQTT and
+replies `on_res` / `off_res`. Rename the folder if you like and edit
+`main/on_off_pin.c`.
+
+### Option 2: add CyThing to an empty or existing project
 
 ```bash
-idf.py create-project-from-example "mbahmani90/cything^1.0.0:on_off_pin"
+idf.py create-project my_device
+cd my_device
+idf.py add-dependency "mbahmani90/cything^1.2.0"
 ```
 
-Copy [sdkconfig.defaults](examples/on_off_pin/sdkconfig.defaults) and
-[partitions.csv](examples/on_off_pin/partitions.csv) from the example into your
-project root. They are required: BLE, the partition table and mbedTLS's CSR
-support all come from them.
+Then:
+
+1. Copy [sdkconfig.defaults](examples/on_off_pin/sdkconfig.defaults) and
+   [partitions.csv](examples/on_off_pin/partitions.csv) from the example into
+   your project root. They are required: BLE, the partition table and
+   mbedTLS's CSR support all come from them.
+2. In your `main/` source, call `cything_begin()` from `app_main()` and
+   implement the two command hooks:
+
+   ```c
+   #include "CyThingEsp32.h"
+
+   bool app_command_handle_line(const char *line, int len, int sock)
+   {
+       return false;   /* TCP command not handled */
+   }
+
+   bool app_mqtt_command_handle(const char *command, int command_length)
+   {
+       return false;   /* MQTT command not handled */
+   }
+
+   void app_main(void)
+   {
+       cything_begin();
+   }
+   ```
+
+3. Optionally, add the claim certificate (next section).
 
 ## Claim certificate (optional)
 
