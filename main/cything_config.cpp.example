@@ -18,8 +18,8 @@
  * A strong definition shows as D or R; the library's weak default as V or W.
  *
  * The Arduino equivalent is examples/Basic/cything_config.ino — the same symbol
- * list, and the app generates a copy of it into every sketch bundle. All three
- * must stay in step.
+ * list, and the app generates a copy of each (FirmwareSketchBundle's
+ * CYTHING_CONFIG_INO and CYTHING_CONFIG_CPP). All four must stay in step.
  */
 #include "CyThingEsp32.h"
 #include "cything_network_spec.h"
