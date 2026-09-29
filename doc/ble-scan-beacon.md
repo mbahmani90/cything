@@ -8,12 +8,12 @@
 Once the device is on the router it keeps Bluetooth up as a **non-connectable
 beacon**: it advertises a scan service UUID plus its **LAN IPv4**, and its
 identity as the local name. A phone that hears it sends a **unicast
-`GET_INFO`** to that address and gets the same 9-field CSV the multicast scan
-returns ([udp-discovery.md](udp-discovery.md)). No BLE connection, no GATT.
+`GET_INFO`** to that address and gets the same 9-field CSV as after an mDNS
+lookup ([udp-discovery.md](udp-discovery.md)). No BLE connection, no GATT.
 
-Why: the app's local discovery is a multicast UDP query, and multi-AP
-networks (mesh, campus, IGMP-snooping switches) drop the *query* before it
-reaches the device — while the unicast *reply* path always works. The
+Why: the app's local discovery is multicast (mDNS today; a custom UDP
+group before that), and multi-AP networks (mesh, campus, IGMP-snooping
+switches) can drop the *query* before it reaches the device — while the unicast *reply* path always works. The
 beacon hands the app the one thing it is missing, the address, over a radio
 that does not care about the Wi-Fi topology. It also covers the window right
 after Wi-Fi onboarding, before the device has a cloud identity, when the
@@ -71,7 +71,7 @@ mode:
   build with `BLE_SCAN_BEACON_ENABLED 0`.
 
 Then the app test in its own doc: the device list fills over BLE with the
-phone on a different AP of the same SSID, where the multicast scan alone
+phone on a different AP of the same SSID, where multicast discovery alone
 finds nothing.
 
 ## Open

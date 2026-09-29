@@ -195,11 +195,10 @@ dev -> ACK                       | ERR:OWNER | ERR:AUTH | ERR:UNKNOWN
 app -> RESET
 dev -> ACK                       (then the list + password are wiped, every session de-authenticated)
 
-app -> DISCOVERYMODE:<1|2|3>     1 = Wi-Fi multicast, 2 = BLE beacon, 3 = both (doc/ble-scan-beacon.md)
+app -> DISCOVERYMODE:<1|2|3>     1 = Wi-Fi only, 2 = BLE beacon, 3 = both (doc/ble-scan-beacon.md)
 dev -> ACK                       | ERR:BADFMT | ERR:STORE
   Persisted (NVS `cy_ble`/`disc_mode`) and applied at once: the scan beacon
-  stops or starts, and the UDP server leaves or joins the multicast group
-  (a unicast GET_INFO is answered in every mode).
+  stops or starts. mDNS and the unicast GET_INFO server run in every mode.
 
 app -> DISCOVERYMODE?
 dev -> DISCOVERYMODE:<1|2|3>     the mode currently applied

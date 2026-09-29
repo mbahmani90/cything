@@ -32,7 +32,6 @@ const uint16_t cy_tcp_port             = CYTHING_TCP_PORT;
 const uint16_t cy_udp_port             = CYTHING_UDP_PORT;
 const char     cy_scan_command[]       = CYTHING_SCAN_COMMAND;
 const char     cy_scan_response[]      = CYTHING_SCAN_RESPONSE;
-const char     cy_multicast_ipv4[]     = CYTHING_MULTICAST_IPV4;
 const uint8_t  cy_ble_base_uuid128[16] = { CYTHING_BLE_BASE_UUID128_BYTES };
 /* Guarded so a network spec generated before mDNS still builds. */
 #ifdef CYTHING_MDNS_CHANNEL_TAG

@@ -107,8 +107,8 @@ On success `device_ip` becomes the station address, Info is marked changed
 read of Info completes before `pairing_commit()` writes flash and arms the
 1 s reboot (`02`). The station is left connected — the reboot tears it down.
 The router will normally hand the same address to the same MAC on the next
-lease, which is what the app connects to first; its multicast scan remains
-the fallback.
+lease, which is what the app connects to first; mDNS discovery remains the
+fallback.
 
 ### Device Information service — `0x180A` (SIG)
 

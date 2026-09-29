@@ -68,7 +68,7 @@ void process_aws_iot_get_info_command( MQTTContext_t * pMqttContext, const char 
          *   scanResponse,sourceTerminalId,deviceType,deviceId,localIp,ssidB64,hardwareVersion,firmwareVersion
          *
          * localIp + ssidB64 (base64 of the joined SSID) let a co-located app
-         * bring up a direct LAN socket when the multicast scan can't cross APs
+         * bring up a direct LAN socket when mDNS can't cross APs
          * — see the CypressTerminalKmp repo, doc/local-ip-discovery-via-mqtt.md.
          * The SSID is base64'd because an 802.11 SSID may contain a comma;
          * localIp is left empty when the STA has no address, and the app then

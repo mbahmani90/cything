@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 640" font-family="Helvetica, Arial, sans-serif" font-size="13">
-  <title>UDP discovery (multicast GET_INFO) block diagram</title>
+  <title>UDP GET_INFO (unicast) block diagram</title>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/>
@@ -29,17 +29,17 @@
   <!-- Scanner -->
   <rect class="box" x="30" y="280" width="170" height="70" rx="4"/>
   <text class="lbl" x="115" y="305">Phone app / scanner</text>
-  <text class="small" x="115" y="322">one datagram, then</text>
-  <text class="small" x="115" y="337">collects the replies</text>
+  <text class="small" x="115" y="322">finds devices over mDNS,</text>
+  <text class="small" x="115" y="337">one GET_INFO to each</text>
 
   <!-- Multicast datagram -->
   <rect class="net" x="260" y="255" width="230" height="120" rx="4"/>
   <text class="ttl" x="375" y="275">"GET_INFO"  (SCAN_COMMAND)</text>
-  <text class="codec" x="375" y="298">IPv4  232.10.11.12 : 1234</text>
-  <text class="codec" x="375" y="314">IPv6  [FF02::FC]   : 1234</text>
-  <text class="codec" x="375" y="330">TTL / hops = 20 (MULTICAST_TTL)</text>
-  <text class="small" x="375" y="352">plain unicast to &lt;device-ip&gt;:1234</text>
-  <text class="small" x="375" y="366">reaches the same socket</text>
+  <text class="codec" x="375" y="298">unicast  &lt;device-ip&gt; : 1234</text>
+  <text class="codec" x="375" y="314">IPv4 or IPv6</text>
+  <text class="codec" x="375" y="330">address from mDNS / BLE beacon</text>
+  <text class="small" x="375" y="352">no multicast group:</text>
+  <text class="small" x="375" y="366">the device joins none</text>
 
   <path class="edge" d="M 200 315 L 260 315"/>
 
@@ -50,7 +50,7 @@
   <rect class="fn" x="600" y="65" width="570" height="60" rx="4"/>
   <text class="ttl" x="885" y="82">create_udp_socket()</text>
   <text class="codec" x="885" y="98">socket(PF_INET6, SOCK_DGRAM) · SO_REUSEADDR · IPV6_V6ONLY=0 · bind [::]:UDP_PORT</text>
-  <text class="codec" x="885" y="113">IPV6_MULTICAST_IF = STA netif · join FF02::FC (IPv6) + 232.10.11.12 (IPv4)</text>
+  <text class="codec" x="885" y="113">unicast only — no multicast groups joined; works in STA and soft-AP mode</text>
 
   <rect class="box" x="600" y="145" width="570" height="50" rx="4"/>
   <text class="ttl" x="885" y="163">recvfrom(sock, rx_buffer[128], &amp;source_addr)   ⏳ blocks forever</text>
@@ -67,7 +67,7 @@
 
   <rect class="box" x="600" y="371" width="570" height="50" rx="4"/>
   <text class="ttl" x="885" y="389">sendto(sock, reply, reply_len, &amp;source_addr)</text>
-  <text class="codec" x="885" y="407">unicast back to the sender — never to the multicast group</text>
+  <text class="codec" x="885" y="407">unicast back to the sender</text>
 
   <!-- pipeline arrows -->
   <path class="edge" d="M 885 125 L 885 145"/>
@@ -95,8 +95,8 @@
   <path class="edge" d="M 490 300 L 600 170"/>
   <path class="edge" d="M 490 320 L 560 525"/>
   <path class="edge" d="M 490 335 L 560 595"/>
-  <text class="note" x="262" y="232">multicast: every group member</text>
-  <text class="note" x="262" y="246">gets the same datagram</text>
+  <text class="note" x="262" y="232">one unicast datagram</text>
+  <text class="note" x="262" y="246">per device found</text>
 
   <!-- Unicast replies back to the scanner -->
   <path class="reply" d="M 600 405 L 100 405 L 100 350"/>
@@ -108,7 +108,7 @@
 
   <!-- Legend -->
   <path class="edge" d="M 900 585 L 940 585"/>
-  <text class="note" x="948" y="589">multicast / unicast GET_INFO request</text>
+  <text class="note" x="948" y="589">unicast GET_INFO request</text>
   <path class="reply" d="M 900 610 L 940 610"/>
   <text class="note" x="948" y="614">unicast CSV reply to source_addr:port</text>
 </svg>

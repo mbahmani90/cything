@@ -7,7 +7,7 @@
 /* Device discovery method control (doc/ble-scan-beacon.md, DISCOVERYMODE command). */
 
 typedef enum {
-    DISCOVERY_WIFI = 1,   /* Wi-Fi multicast scan only */
+    DISCOVERY_WIFI = 1,   /* Wi-Fi only (mDNS); no BLE beacon */
     DISCOVERY_BLE = 2,    /* BLE beacon only */
     DISCOVERY_BOTH = 3,   /* Both methods (default) */
 } discovery_mode_t;
@@ -24,5 +24,3 @@ esp_err_t discovery_mode_set(discovery_mode_t mode);
 /* Check if BLE beacon should be advertised for the current mode. */
 bool discovery_mode_should_advertise_ble(void);
 
-/* Check if Wi-Fi multicast scan should be used (app-side, informational). */
-bool discovery_mode_should_scan_wifi(void);

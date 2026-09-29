@@ -141,7 +141,7 @@ thing. The table below is about consuming the library, in either style:
 
 ### Channel and model configuration (optional)
 
-Ports, the discovery multicast group, the soft-AP SSID prefix, the BLE base
+Ports, the discovery token, the soft-AP SSID prefix, the BLE base
 UUID, the device name and type: all of them used to be `#define`s here, which
 meant one firmware build per channel and a hand edit for every value. They are
 now **weak symbols** (`src/device_config/cy_config.h`), and the application
