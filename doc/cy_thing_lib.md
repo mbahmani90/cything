@@ -149,6 +149,7 @@ smart_device_test_gpio/
 │   ├── tcp_server/ aws/ wifi/ udp_socket/ ota_lib/ memory_handler/ common/ device_config/
 │   ├── ble/                       BLE (NimBLE; NimBLE-Arduino under Arduino): Wi-Fi pairing service — doc/ble-pairing.md;
 │   │                              station-mode scan beacon — doc/ble-scan-beacon.md
+│   ├── mdns/                      mDNS / DNS-SD _cything._tcp advertiser (espressif/mdns) — doc/mdns-discovery.md
 │   ├── coreMQTT/                  vendored, flattened: core_mqtt*.c/h, transport_interface.h,
 │   │                                 core_mqtt_config.h, network_transport.c/h (ESP-TLS port),
 │   │                                 logging_levels.h / logging_stack.h, LICENSE
@@ -157,6 +158,7 @@ smart_device_test_gpio/
 ├── components/cything/            ← the library as an ESP-IDF component — what an external
 │   │                                 idf.py project adds to consume CyThing (§5)
 │   ├── CMakeLists.txt             idf_component_register: lists ../../src/**.c, INCLUDE_DIRS ../../src, WHOLE_ARCHIVE
+│   ├── idf_component.yml          registry dependencies: espressif/mdns (Arduino: precompiled in the core)
 │   └── Kconfig.projbuild          MQTT endpoint/client-id options + the coreMQTT menu
 ├── main/                          ← ESP-IDF harness only, for this repo's own firmware
 │   ├── app_main.c                 the two hooks + app_main(){ cything_begin(); } — exactly what a sketch contains

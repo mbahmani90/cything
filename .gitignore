@@ -52,6 +52,11 @@ components/cything/examples/*/cert/
 /main/cything_network_spec.h
 /main/cything_device_params.h
 
+# ESP-IDF component manager: downloaded registry components (espressif/mdns)
+# and the lock it writes for the root project
+/managed_components/
+/dependencies.lock
+
 # PlatformIO build output
 /.pio/
 

@@ -15,6 +15,9 @@
 #define CYTHING_SCAN_COMMAND        "GET_INFO"
 #define CYTHING_SCAN_RESPONSE       "ACK"
 #define CYTHING_MULTICAST_IPV4      "232.10.11.12"
+/* mDNS: TXT "ch=" of the fixed _cything._tcp service; the app derives it
+ * from the channel id. Empty = no channel tag. */
+#define CYTHING_MDNS_CHANNEL_TAG    ""
 
 /* BLE pairing base UUID: 6A480001-DC02-4C78-A1A3-64193A12E418
  * The 16 bytes below are that string read backwards - the little-endian

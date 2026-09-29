@@ -8,6 +8,7 @@
 #include "esp_random.h"
 
 #include "common/cy_log.h"
+#include "mdns/mdns_discovery.h"
 
 #define NVS_NS        "cy_sec"
 #define NVS_KEY_LIST  "paired"
@@ -285,6 +286,7 @@ int paired_list_add(const char *user_sub, const char *user_email,
     xSemaphoreGive(s_mutex);
 
     CY_LOGI(TCP_SERVER_DB, "paired_list: #%d %s (%s) role %u", i, e->user_sub, e->user_email, e->role);
+    mdns_discovery_refresh();                       /* TXT paired= */
     return i;
 }
 
@@ -303,6 +305,7 @@ esp_err_t paired_list_remove(int index){
     s_list.count--;
     esp_err_t err = nvs_store();
     xSemaphoreGive(s_mutex);
+    mdns_discovery_refresh();                       /* TXT paired= */
     return err;
 }
 
@@ -337,5 +340,6 @@ esp_err_t paired_list_clear(void){
     s_list.version = BLOB_VERSION;
     esp_err_t err = nvs_store();
     xSemaphoreGive(s_mutex);
+    mdns_discovery_refresh();                       /* TXT paired=0 */
     return err;
 }

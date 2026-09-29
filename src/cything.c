@@ -39,6 +39,7 @@
 #include "tcp_server/tcp_response_fifo.h"
 #include "tcp_server/pairing.h"
 #include "udp_socket/udp_server.h"
+#include "mdns/mdns_discovery.h"
 #include "wifi/access_point.h"
 #include "wifi/station_mode.h"
 #include "wifi/wifi_info_handler.h"
@@ -92,6 +93,7 @@ void cything_begin(void)
     local_session_init();
     enc_frame_init();
     pairing_timer_init();
+    mdns_discovery_init();
     xTaskCreate(tcp_response_send_task, "tcp_response_send", TCP_RESPONSE_SEND_TASK_STACK_SIZE, NULL, TCP_RESPONSE_SEND_TASK_PRIORITY, NULL);
 
 	if(init_nvs_flash() != ESP_OK){

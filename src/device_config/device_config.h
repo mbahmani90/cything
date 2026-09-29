@@ -18,6 +18,12 @@
  * cy_multicast_ipv4 (device_config/cy_config.h); this is its weak default. */
 #define MULTICAST_IPV4_ADDR "232.10.11.12"
 
+/* Default mDNS channel tag (TXT "ch=", instance-name suffix; see
+ * doc/mdns-discovery.md). Empty: the device advertises _cything._tcp with no
+ * channel. The effective value is cy_mdns_channel_tag (device_config/cy_config.h),
+ * which the app's generated sketch sets per channel. */
+#define MDNS_CHANNEL_TAG    ""
+
 #define SCAN_COMMAND     "GET_INFO"
 #define SCAN_COMMAND_LEN (sizeof(SCAN_COMMAND) - 3)
 

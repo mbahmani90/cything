@@ -10,6 +10,7 @@
 
 #include "common/cy_log.h"
 #include "device_config/cy_config.h"
+#include "mdns/mdns_discovery.h"
 
 #define NVS_NS         "cy_sec"
 #define NVS_KEY_SALT   "pw_salt"
@@ -173,6 +174,7 @@ esp_err_t device_password_set(const char *password, size_t len){
     free(salt);
     free(ver);
     CY_LOGI(TCP_SERVER_DB, "device_password: %s", err == ESP_OK ? "set" : esp_err_to_name(err));
+    if(err == ESP_OK) mdns_discovery_refresh();     /* TXT pw=1 */
     return err;
 }
 
@@ -186,6 +188,7 @@ esp_err_t device_password_clear(void){
     s_global_until_us = 0;
     memset(s_ip, 0, sizeof(s_ip));
     xSemaphoreGive(s_mutex);
+    mdns_discovery_refresh();                       /* TXT pw=0 */
     return err;
 }
 

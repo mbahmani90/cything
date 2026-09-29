@@ -22,3 +22,14 @@ CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
 CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT=y
+
+# mDNS / DNS-SD responder (espressif/mdns, doc/mdns-discovery.md). Station
+# netif only — it follows the STA's IP events by itself; never on the soft-AP.
+# No console commands, no browsing (the device only answers). The task keeps
+# the component defaults: priority 1, pinned to CPU0, 4 KB stack.
+CONFIG_MDNS_PREDEF_NETIF_STA=y
+# CONFIG_MDNS_PREDEF_NETIF_AP is not set
+# CONFIG_MDNS_PREDEF_NETIF_ETH is not set
+# CONFIG_MDNS_ENABLE_CONSOLE_CLI is not set
+# CONFIG_MDNS_ENABLE_BROWSE is not set
+CONFIG_MDNS_MAX_SERVICES=4

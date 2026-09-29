@@ -24,6 +24,12 @@ priority.
 | `host_task` ([ble/ble_pairing.c](../src/ble/ble_pairing.c)) | `nimble_host` | 4096 (`CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE`) | 21 (NimBLE's own, `nimble_port_freertos_init`) | [cything.c](../src/cything.c) — AP (pairing) mode only, via `ble_pairing_start()` | `NULL` | forever: `nimble_port_run()` — every GAP/GATT callback runs here — see [ble-pairing.md](ble-pairing.md) |
 | [`ble_commit_task`](../src/ble/ble_pairing.c) | `ble_commit` | 4096 (`BLE_COMMIT_TASK_STACK_SIZE`) | 5 | [ble/ble_pairing.c](../src/ble/ble_pairing.c) — on Control = COMMIT | `NULL` | one-shot: `wifi_trial_run()` (APSTA credential trial, ≤ 15 s), Status `04`, 1.5 s read window, `pairing_commit()` (flash write + arm reboot), final Status notify, `vTaskDelete` |
 
+Created by a component, not by CyThing (so not in `task_config.h`):
+
+| Task | Task name | Stack (bytes) | Prio | Core | Created from | Lifetime |
+|---|---|---|---|---|---|---|
+| `espressif/mdns` service task | `mdns` | 4096 (`CONFIG_MDNS_TASK_STACK_SIZE`) | 1 (`CONFIG_MDNS_TASK_PRIORITY`) | CPU0 (`CONFIG_MDNS_TASK_AFFINITY_CPU0`) | `mdns_init()` in [mdns/mdns_discovery.c](../src/mdns/mdns_discovery.c), from `wifi_init_sta` after the first got-IP — station mode only | forever: mDNS responder, wakes on its 100 ms timer and on packets — see [mdns-discovery.md](mdns-discovery.md). Below every CyThing task except `aws_iot_task` (0) |
+
 The `main` task that runs `app_main()` (which just calls `cything_begin()`, [cything.c](../src/cything.c)) is created by ESP-IDF itself:
 `CONFIG_ESP_MAIN_TASK_STACK_SIZE=3584`, priority 1, pinned to CPU0
 ([sdkconfig](../sdkconfig)). It returns after spawning the tasks above.

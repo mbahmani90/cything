@@ -23,6 +23,7 @@ __attribute__((weak)) const uint16_t cy_udp_port             = UDP_PORT;
 __attribute__((weak)) const char     cy_scan_command[]       = SCAN_COMMAND;
 __attribute__((weak)) const char     cy_scan_response[]      = AWS_SCAN_RESPONSE;
 __attribute__((weak)) const char     cy_multicast_ipv4[]     = MULTICAST_IPV4_ADDR;
+__attribute__((weak)) const char     cy_mdns_channel_tag[]   = MDNS_CHANNEL_TAG;
 
 /* Slot bytes 12/13 zero: ble_uuid128_from_base() writes the service id there. */
 __attribute__((weak)) const uint8_t  cy_ble_base_uuid128[16] = {
@@ -45,9 +46,10 @@ size_t cy_scan_command_len(void){
 }
 
 void cy_config_log(void){
-    CY_LOGI(1, "config: tcp=%u udp=%u scan='%s' resp='%s' ap='%s' mcast=%s",
+    CY_LOGI(1, "config: tcp=%u udp=%u scan='%s' resp='%s' ap='%s' mcast=%s mdns_tag='%s'",
             (unsigned)cy_tcp_port, (unsigned)cy_udp_port,
-            cy_scan_command, cy_scan_response, cy_ap_ssid_prefix, cy_multicast_ipv4);
+            cy_scan_command, cy_scan_response, cy_ap_ssid_prefix, cy_multicast_ipv4,
+            cy_mdns_channel_tag);
     CY_LOGI(1, "config: device='%s' type='%s' hw=%s fw=%s ble=%02X%02X....%02X%02X",
             cy_device_name, cy_device_type, cy_hardware_version, cy_firmware_version,
             cy_ble_base_uuid128[15], cy_ble_base_uuid128[14],

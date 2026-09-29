@@ -9,6 +9,12 @@ list without knowing any device's IP in advance.
 
 > **Per-channel config (2026-09):** the UDP port, discovery multicast group and `GET_INFO` token are runtime values now — `cy_udp_port`, `cy_multicast_ipv4`, `cy_scan_command` (`device_config/cy_config.h`), overridable per channel by the sketch the app exports. The macros in `device_config.h` remain only as their weak defaults.
 
+> **mDNS (2026-09):** the device also advertises itself as the Bonjour service
+> `_cything._tcp` (TXT: `id`, `ch`, `v`, `type`, `paired`, `pw`, `prov`), which
+> the next app release browses with `NsdManager` / `NWBrowser` instead of this
+> scan. Both run side by side; nothing here changed. See
+> [mdns-discovery.md](mdns-discovery.md).
+
 The same port number is used by the [TCP command server](tcp-server.md);
 everything else (pairing, provisioning, OTA, `on_cmd`/`off_cmd`) is TCP-only.
 The UDP server answers `GET_INFO` and ignores every other payload.
@@ -334,3 +340,4 @@ Current behaviour, documented rather than fixed:
 | [src/device_config/device_config.h](../src/device_config/device_config.h) | `UDP_PORT`, `SCAN_COMMAND`, name/type/version constants |
 | [src/common/task_config.h](../src/common/task_config.h) | task stack and priority |
 | [src/wifi/station_mode.c](../src/wifi/station_mode.c), [src/cything.c](../src/cything.c) | where the task is started |
+| [doc/mdns-discovery.md](mdns-discovery.md) | the mDNS / DNS-SD discovery that runs next to this one |
