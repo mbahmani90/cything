@@ -12,7 +12,6 @@
 #include "security/pairing_events.h"
 #include "ble/discovery_mode.h"
 #include "ble/ble_beacon.h"
-#include "udp_socket/udp_server.h"
 
 #define B64_MAX(n)  ((((n) + 2) / 3) * 4 + 1)
 
@@ -250,7 +249,6 @@ static void handle_discoverymode(local_session_t *s, const char *line, int len){
     }
 
     ble_beacon_apply_discovery_mode();     /* stop / (re)start the beacon */
-    udp_server_reconfigure();              /* join / leave the multicast group */
     security_send_line(s->sock, "ACK");
     CY_LOGI(TCP_SERVER_DB, "owner: discovery mode set to %c", *p);
 }

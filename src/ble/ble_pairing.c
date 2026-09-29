@@ -114,7 +114,7 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
               .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
               .val_handle = &status_val_handle },
             /* The same CSV the UDP GET_INFO scan returns, so the app can run
-             * its post-pairing steps by IP without a multicast scan. The
+             * its post-pairing steps by IP without a discovery round. The
              * notify is only a hint (it truncates at MTU-3); read for the
              * full value. */
             { .uuid = &pair_info_uuid.u,   .access_cb = gatt_access, .arg = (void *)CHR_INFO,

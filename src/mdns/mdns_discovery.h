@@ -2,8 +2,8 @@
 
 /*
  * mDNS / DNS-SD discovery (doc/mdns-discovery.md). In station mode the device
- * advertises one Bonjour service next to the UDP multicast GET_INFO scan
- * (doc/udp-discovery.md), which keeps working unchanged:
+ * advertises one Bonjour service; the app then sends a unicast GET_INFO to the
+ * resolved address (doc/udp-discovery.md):
  *
  *   service   _cything._tcp on cy_tcp_port — FIXED, never per channel: iOS
  *             can only browse types listed in the app's Info.plist

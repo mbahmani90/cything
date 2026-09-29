@@ -14,10 +14,6 @@
 #define TCP_PORT    1234
 #define UDP_PORT    1234
 
-/* Default IPv4 multicast group for UDP discovery. The effective value is
- * cy_multicast_ipv4 (device_config/cy_config.h); this is its weak default. */
-#define MULTICAST_IPV4_ADDR "232.10.11.12"
-
 /* Default mDNS channel tag (TXT "ch=", instance-name suffix; see
  * doc/mdns-discovery.md). Empty: the device advertises _cything._tcp with no
  * channel. The effective value is cy_mdns_channel_tag (device_config/cy_config.h),

@@ -40,7 +40,7 @@
  *   app -> DISCOVERYMODE:<mode>  (mode is "1" for Wi-Fi, "2" for BLE, "3" for both)
  *   dev -> ACK                   or ERR:BADFMT
  *          Sets the device discovery method. Mode persists in NVS and applies
- *          to how the device advertises: 1=multicast UDP scan only, 2=BLE beacon
+ *          to how the device advertises: 1=Wi-Fi only (no beacon), 2=BLE beacon
  *          only, 3=both methods (default). Beacon advertising is controlled
  *          accordingly (doc/ble-scan-beacon.md).
  *

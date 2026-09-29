@@ -1,19 +1,22 @@
-# UDP discovery server (multicast `GET_INFO`)
+# UDP `GET_INFO` server (unicast)
 
-The device runs a small UDP server on port **1234** whose only job is
-**discovery**: the mobile app sends one `GET_INFO` datagram to a multicast
-group, every device on the LAN that has joined the group receives it, and
-each one answers with a **unicast** CSV line describing itself (IP, name,
-type, provisioning identity, versions). That is how the app builds its device
-list without knowing any device's IP in advance.
+The device runs a small UDP server on port **1234** whose only job is to
+answer **`GET_INFO`**: the app sends one datagram straight to the device's
+address and gets back a **unicast** CSV line describing it (IP, name, type,
+provisioning identity, versions). The app learns that address from
+[mDNS](mdns-discovery.md) (`_cything._tcp`) or from the
+[BLE scan beacon](ble-scan-beacon.md), then uses this reply to identify the
+device and add it to its list.
 
-> **Per-channel config (2026-09):** the UDP port, discovery multicast group and `GET_INFO` token are runtime values now — `cy_udp_port`, `cy_multicast_ipv4`, `cy_scan_command` (`device_config/cy_config.h`), overridable per channel by the sketch the app exports. The macros in `device_config.h` remain only as their weak defaults.
+> **Multicast scan removed (2026-09):** the device used to join the groups
+> `232.10.11.12` / `FF02::FC` so the app could find it with one multicast
+> `GET_INFO`. Discovery is mDNS now, and the app sends `GET_INFO` by unicast
+> only, so the group joins, `cy_multicast_ipv4` and `MULTICAST_IPV4_ADDR` are
+> gone. App builds from before mDNS, which only multicast, no longer find
+> devices running this firmware. A sketch that still defines
+> `cy_multicast_ipv4` compiles; the value is ignored.
 
-> **mDNS (2026-09):** the device also advertises itself as the Bonjour service
-> `_cything._tcp` (TXT: `id`, `ch`, `v`, `type`, `paired`, `pw`, `prov`), which
-> the next app release browses with `NsdManager` / `NWBrowser` instead of this
-> scan. Both run side by side; nothing here changed. See
-> [mdns-discovery.md](mdns-discovery.md).
+> **Per-channel config (2026-09):** the UDP port and `GET_INFO` token are runtime values — `cy_udp_port`, `cy_scan_command` (`device_config/cy_config.h`), overridable per channel by the sketch the app exports. The macros in `device_config.h` remain only as their weak defaults.
 
 The same port number is used by the [TCP command server](tcp-server.md);
 everything else (pairing, provisioning, OTA, `on_cmd`/`off_cmd`) is TCP-only.
@@ -23,7 +26,7 @@ All code lives in [src/udp_socket/](../src/udp_socket/):
 
 | File | Role |
 |---|---|
-| `udp_server.c` | `udp_server_task`: socket setup, multicast joins, receive/reply loop, `processData()` |
+| `udp_server.c` | `udp_server_task`: socket setup, receive/reply loop, `processData()` |
 | `udp_response_handler.c` | `udp_get_info_response()`: formats the 9-field scan reply |
 
 ![UDP discovery block diagram](udp-discovery.svg)
@@ -31,21 +34,20 @@ All code lives in [src/udp_socket/](../src/udp_socket/):
 ## Lifecycle at a glance
 
 1. **Create the socket** – one dual-stack IPv6 UDP socket bound to
-   `[::]:1234`, joined to the IPv6 group `FF02::FC` and the IPv4 group
-   `232.10.11.12`. If any step fails, sleep 1 s and start over.
-2. **Wait** – block in `recvfrom()`; a datagram sent to either group *or*
-   directly to the device's own address lands here.
+   `[::]:1234`. If any step fails, sleep 1 s and start over.
+2. **Wait** – block in `recvfrom()` for a datagram sent to the device's own
+   address.
 3. **Match** – `processData()` compares the payload with `SCAN_COMMAND`
    (`"GET_INFO"`). Anything else produces no reply.
 4. **Format** – `udp_get_info_response()` builds the CSV line into a
    512-byte `reply` buffer.
 5. **Reply** – `sendto()` the line to `source_addr`, i.e. **back to the
-   sender only**, never to the multicast group. Then straight back to step 2.
+   sender only**. Then straight back to step 2.
 
 ```mermaid
 flowchart TD
     subgraph U["udp_server_task (1 task, started once per Wi-Fi bring-up)"]
-        A["create_udp_socket()<br/>socket(PF_INET6, SOCK_DGRAM)<br/>SO_REUSEADDR, IPV6_V6ONLY=0<br/>bind [::]:UDP_PORT<br/>IPV6_MULTICAST_IF = STA netif, hops 20<br/>join FF02::FC + 232.10.11.12"]
+        A["create_udp_socket()<br/>socket(PF_INET6, SOCK_DGRAM)<br/>SO_REUSEADDR, IPV6_V6ONLY=0<br/>bind [::]:UDP_PORT"]
         A -->|"any step failed"| A1["⏱ vTaskDelay 1000 ms"] --> A
         A -->|ok| B["recvfrom(sock, rx_buffer[128])  ⏳ blocks forever"]
         B -->|"< 0 (error)"| Z["shutdown + close"] --> A
@@ -83,7 +85,7 @@ itself never exits: on any socket error it closes and recreates the socket.
 ## Step 1: socket setup
 
 [`create_udp_socket()`](../src/udp_socket/udp_server.c) builds one socket that
-receives IPv4 *and* IPv6, multicast *and* unicast:
+receives IPv4 *and* IPv6:
 
 | Call | Value | Why |
 |---|---|---|
@@ -91,21 +93,10 @@ receives IPv4 *and* IPv6, multicast *and* unicast:
 | `SO_REUSEADDR` | `1` | a restart (after an error) can rebind `:1234` immediately |
 | `IPV6_V6ONLY` | `0` | **dual-stack**: IPv4 senders show up as v4-mapped IPv6 addresses (`::ffff:a.b.c.d`) |
 | `bind()` | `[::]:UDP_PORT` (1234) | listen on every interface; port shared with TCP (different protocol, no clash) |
-| `IPV6_MULTICAST_IF` | `esp_netif_get_netif_impl_index(p_netif_sta)` | pin multicast to the station interface |
-| `IPV6_MULTICAST_HOPS` | `MULTICAST_TTL` (20) | hop limit for anything *sent* to a group — irrelevant in practice, replies are unicast |
-| `IPV6_ADD_MEMBERSHIP` | `FF02::FC` on the STA netif | join the link-local IPv6 group (`socket_add_multicast_ipv6_group`) |
-| `IP_ADD_MEMBERSHIP` | `232.10.11.12` on `INADDR_ANY` | join the IPv4 group (`socket_add_ipv4_multicast_group`) |
 
-Both `socket_add_*_group` helpers validate the literal with `inet_aton` /
-`inet6_aton` and warn if it is not a multicast address, but that can only
-trip if someone edits the `#define`s.
-
-Any failure in the chain (`socket`, `bind`, netif index, either group join)
-closes the descriptor, and the task retries from scratch after 1 s.
-
-> The netif index comes from `p_netif_sta`, which is only created by
-> `wifi_init_sta()`. See [Known limitations](#known-limitations) for what that
-> means in access-point mode.
+A failure in `socket` or `bind` closes the descriptor, and the task retries
+from scratch after 1 s. Nothing here depends on the station netif, so the
+server answers in access-point mode too (on `192.168.4.1`).
 
 ## Step 2: receive
 
@@ -209,9 +200,7 @@ sendto(sock, reply, reply_len, 0, (struct sockaddr *)&source_addr, sizeof(source
 ```
 
 The reply goes to exactly the address and port the request came from —
-**unicast**, even when the request was multicast. The app therefore has to
-listen on the port it sent from; it receives one datagram per device, and
-devices never see each other's replies.
+**unicast**. The app therefore has to listen on the port it sent from.
 
 Because the socket is dual-stack, an IPv4 scanner gets an IPv4 reply (lwIP
 unmaps the v4-mapped address) and an IPv6 scanner gets an IPv6 reply.
@@ -242,27 +231,20 @@ between datagrams except by blocking in `recvfrom()`.
 | `SCAN_COMMAND` / `SCAN_COMMAND_LEN` | `"GET_INFO"` / `6` | same | request payload and compared prefix length |
 | `DEVICE_NAME` / `DEVICE_TYPE` | `"dev1"` / `"devtype1"` | same | reply fields 3 and 4 |
 | `FIRMWARE_VERSION` / `HARDWARE_VERSION` | `"1.0"` / `"1.0"` | same | reply fields 7 and 8 |
-| `MULTICAST_IPV4_ADDR` | `232.10.11.12` | [udp_socket/udp_server.c](../src/udp_socket/udp_server.c) | IPv4 group joined; the app must send to it |
-| `MULTICAST_IPV6_ADDR` | `FF02::FC` | same | IPv6 (link-local scope) group joined |
-| `MULTICAST_TTL` | `20` | same | `IPV6_MULTICAST_HOPS`; only affects datagrams the device would *send* to a group (it sends none) |
 | `UDP_REPLY_MAX` | `512` | [udp_socket/udp_server.h](../src/udp_socket/udp_server.h) | reply buffer on the task stack |
 | `UDP_SERVER_TASK_STACK_SIZE` / `_PRIORITY` | `4096` / `5` | [common/task_config.h](../src/common/task_config.h) | stack holds `rx_buffer[128] + addr_str[128] + reply[512]` plus the `CY_LOGI` printf chain |
 | `UDP_DB` | `1` | [common/cy_log.h](../src/common/cy_log.h) | `0`/`1` switch for the server's `CY_LOGx(UDP_DB, …)` tracing |
 
-Changing `MULTICAST_IPV4_ADDR`, `UDP_PORT` or `SCAN_COMMAND` is a protocol
+Changing `UDP_PORT` or `SCAN_COMMAND` is a protocol
 change: the app has to be updated in step.
 
 ## Trying it
 
 From a machine on the same Wi-Fi as a paired (station-mode) device.
 
-Multicast scan — every device on the LAN answers:
-
-```bash
-echo -n GET_INFO | socat -t 2 - UDP4-DATAGRAM:232.10.11.12:1234
-```
-
-Direct (unicast) query of one device:
+Find the device's address with mDNS first (`dns-sd -B _cything._tcp` on
+macOS, `avahi-browse -r _cything._tcp` on Linux; see
+[mdns-discovery.md](mdns-discovery.md)), then query it:
 
 ```bash
 echo -n GET_INFO | nc -u -w 1 <device-ip> 1234
@@ -274,7 +256,7 @@ Or from Python, which also shows which address each reply came from:
 import socket
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.settimeout(2)
-s.sendto(b"GET_INFO", ("232.10.11.12", 1234))
+s.sendto(b"GET_INFO", ("<device-ip>", 1234))
 try:
     while True:
         data, addr = s.recvfrom(512)
@@ -283,7 +265,7 @@ except socket.timeout:
     pass
 ```
 
-Expected output, one line per device:
+Expected output:
 
 ```
 ('192.168.1.42', 1234) 192.168.1.42,,dev1,devtype1,,unprovisioned,1.0,1.0,pake|claim|nopw|email
@@ -293,21 +275,10 @@ On the device monitor you will see `Received 8 bytes from <ip>:`, the
 payload, the two MAC lines, `udp_get_info_response`, the reply, and the
 stack high-water mark.
 
-If nothing comes back from a multicast scan but a unicast query works, the
-access point is dropping multicast (common on guest networks and some
-mesh systems) — the device is fine.
-
 ## Known limitations
 
 Current behaviour, documented rather than fixed:
 
-- **Not started in access-point mode.** `create_udp_socket()` needs the
-  netif index of `p_netif_sta`, which is only created by `wifi_init_sta()`.
-  In AP mode ([cything.c:81](../src/cything.c:81)) that pointer is `NULL`,
-  `esp_netif_get_netif_impl_index()` returns `-1`, and the task logs
-  `Failed to get netif index` and retries every second — so discovery only
-  works once the device is paired and in station mode. The soft-AP address
-  is fixed (`192.168.4.1`), so the app does not need discovery there.
 - **Six-byte prefix match.** `SCAN_COMMAND_LEN` is `sizeof("GET_INFO") - 3`,
   so any payload starting with `GET_IN` is treated as a scan.
 - **No authentication or rate limiting.** Anyone on the LAN can query the
@@ -318,20 +289,15 @@ Current behaviour, documented rather than fixed:
   rather than just skipping that reply. Harmless — the rebuild takes
   milliseconds — but it shows up in the log as
   `Shutting down socket and restarting...`.
-- **`IPV6_MULTICAST_HOPS` result is not checked.** The `if (err < 0)` after
-  that `setsockopt` tests the *previous* call's `err`, so a failure there
-  would go unnoticed. It cannot fail on lwIP with a valid socket.
 - **Verbose per-packet logging.** Every datagram produces ~7 log lines
   including both MAC addresses, which are constant. Set `UDP_DB` to `0` to
   silence them.
-- **Dead code.** `test_udp_multicast_loopback()` in `udp_server.c` is an
-  old send-and-receive self-test that is compiled but never called.
 
 ## File map
 
 | File | Role |
 |---|---|
-| [src/udp_socket/udp_server.c](../src/udp_socket/udp_server.c) | `udp_server_task`, `create_udp_socket`, group joins, `processData` |
+| [src/udp_socket/udp_server.c](../src/udp_socket/udp_server.c) | `udp_server_task`, `create_udp_socket`, `processData` |
 | [src/udp_socket/udp_server.h](../src/udp_socket/udp_server.h) | `UDP_REPLY_MAX`, task prototype |
 | [src/udp_socket/udp_response_handler.c](../src/udp_socket/udp_response_handler.c) | `udp_get_info_response` — the 9-field CSV |
 | [src/aws/provisioning.c](../src/aws/provisioning.c) | `provisioning_get_scan_fields` — fields 2, 5, 6 |
@@ -340,4 +306,4 @@ Current behaviour, documented rather than fixed:
 | [src/device_config/device_config.h](../src/device_config/device_config.h) | `UDP_PORT`, `SCAN_COMMAND`, name/type/version constants |
 | [src/common/task_config.h](../src/common/task_config.h) | task stack and priority |
 | [src/wifi/station_mode.c](../src/wifi/station_mode.c), [src/cything.c](../src/cything.c) | where the task is started |
-| [doc/mdns-discovery.md](mdns-discovery.md) | the mDNS / DNS-SD discovery that runs next to this one |
+| [doc/mdns-discovery.md](mdns-discovery.md) | the mDNS / DNS-SD discovery that tells the app where to send `GET_INFO` |

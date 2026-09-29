@@ -42,8 +42,6 @@ extern const uint16_t cy_udp_port;
 extern const char     cy_scan_command[];
 /** First field of the MQTT get-info reply, e.g. "ACK". */
 extern const char     cy_scan_response[];
-/** IPv4 multicast group the discovery query arrives on. */
-extern const char     cy_multicast_ipv4[];
 /**
  * mDNS channel tag: TXT "ch=" and the "#<tag>" suffix of the instance name of
  * the fixed _cything._tcp service (mdns/mdns_discovery.h). A short id the app

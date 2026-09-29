@@ -1,11 +1,11 @@
 # mDNS / DNS-SD discovery (`_cything._tcp`)
 
 In station mode the device advertises itself over **mDNS / DNS-SD**
-(Bonjour), next to the custom UDP multicast scan
-([udp-discovery.md](udp-discovery.md)), which keeps working unchanged. The
-phone apps find devices with the platform's own browser — Android
-`NsdManager`, iOS `NWBrowser` — instead of our `GET_INFO` datagram to
-`232.10.11.12`:
+(Bonjour). The phone apps find devices with the platform's own browser —
+Android `NsdManager`, iOS `NWBrowser` — and then send a unicast `GET_INFO` to
+the resolved address ([udp-discovery.md](udp-discovery.md)). This replaced
+the custom multicast scan (a `GET_INFO` datagram to `232.10.11.12`), which
+the firmware no longer answers:
 
 - **iOS** can browse a Bonjour type listed in `Info.plist` without the
   multicast-networking entitlement that a raw multicast socket needs.
@@ -92,7 +92,7 @@ const char     cy_mdns_channel_tag[]   = CYTHING_MDNS_CHANNEL_TAG;
 Without it the weak default `cy_mdns_channel_tag[] = ""`
 ([cy_config.c](../src/device_config/cy_config.c), `MDNS_CHANNEL_TAG` in
 [device_config.h](../src/device_config/device_config.h)) applies — the same
-pattern as `cy_multicast_ipv4`. The boot line `config: … mdns_tag='…'` shows
+pattern as `cy_udp_port`. The boot line `config: … mdns_tag='…'` shows
 which one won. The firmware cuts a tag longer than 16 characters and warns
 about characters outside `[a-z0-9]`, but otherwise uses it as given.
 
@@ -170,26 +170,27 @@ sequenceDiagram
 - **Static-IP build** (`ENABLE_WIFI_STATIC_IP`): same, the component reacts to
   `WIFI_EVENT_STA_CONNECTED` when DHCP is stopped.
 - If `mdns_init()` or `mdns_service_add()` fails (out of memory) it is logged
-  and the device carries on with UDP discovery only.
+  and the device can then only be found by the BLE scan beacon or by
+  its IP.
 
 `DISCOVERYMODE` ([ble-scan-beacon.md](ble-scan-beacon.md)) does not switch
 mDNS off: like the UDP server it is always on in station mode; the mode only
 gates the BLE beacon.
 
-## Coexistence with UDP discovery
+## mDNS and the UDP `GET_INFO` reply
 
-Both run side by side and describe the same device:
+mDNS says where the device is; the unicast `GET_INFO` reply is what the app
+trusts and lists:
 
 | | UDP `GET_INFO` | mDNS |
 |---|---|---|
-| Transport | query to `232.10.11.12` / `FF02::FC` port `cy_udp_port`, unicast CSV reply | `224.0.0.251:5353`, standard DNS-SD |
-| Channel-specific | group, port and token come from the network spec | fixed type; tag in TXT / instance name |
+| Transport | unicast to the device on `cy_udp_port`, unicast CSV reply | `224.0.0.251:5353`, standard DNS-SD |
+| Channel-specific | port and token come from the network spec | fixed type; tag in TXT / instance name |
 | Carries | IP, `sourceTerminalId`, name, type, `deviceId`, provision state, versions, caps | host/IP, port, `id`, `ch`, `v`, `type`, `paired`, `pw`, `prov` |
-| Needed by | the current app | the next app release |
 
-The UDP server is untouched. An app that finds a device over mDNS can still
-send a unicast `GET_INFO` to the resolved address for the full CSV
-(`sourceTerminalId`, caps).
+The multicast groups the UDP server used to join (`232.10.11.12`,
+`FF02::FC`) are gone; app builds from before mDNS, which only sent the
+multicast scan, no longer find the device.
 
 ## Configuration and cost
 
@@ -271,7 +272,7 @@ Checks worth repeating after a change:
   `dns-sd -B` (its goodbye or TTL). Power it back: it re-appears, `-L`
   resolves to the (possibly new) address, `mdns: station up` on the monitor.
   Repeat a few times; free heap should not drift.
-- **UDP still works** — `echo -n GET_INFO | socat -t 2 - UDP4-DATAGRAM:232.10.11.12:1234`.
+- **UDP still works** — `echo -n GET_INFO | nc -u -w 1 <resolved-ip> 1234`.
 
 ## File map
 

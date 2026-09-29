@@ -84,7 +84,3 @@ bool discovery_mode_should_advertise_ble(void) {
     return mode == DISCOVERY_BLE || mode == DISCOVERY_BOTH;
 }
 
-bool discovery_mode_should_scan_wifi(void) {
-    discovery_mode_t mode = discovery_mode_get();
-    return mode == DISCOVERY_WIFI || mode == DISCOVERY_BOTH;
-}
