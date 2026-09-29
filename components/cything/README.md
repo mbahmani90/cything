@@ -1,8 +1,8 @@
 # CyThing
 
 ESP32 smart-device firmware as an ESP-IDF component: Wi-Fi pairing over BLE or
-soft-AP, TCP/UDP local control, AWS IoT MQTT with per-device certificate
-provisioning, and HTTPS OTA. Call `cything_begin()` from `app_main()` and
+soft-AP, TCP/UDP local control with UDP and mDNS (`_cything._tcp`) discovery,
+AWS IoT MQTT with per-device certificate provisioning, and HTTPS OTA. Call `cything_begin()` from `app_main()` and
 implement the two command hooks declared in `CyThingEsp32.h`.
 
 ## Getting started
@@ -36,7 +36,8 @@ Then:
 1. Copy [sdkconfig.defaults](examples/on_off_pin/sdkconfig.defaults) and
    [partitions.csv](examples/on_off_pin/partitions.csv) from the example into
    your project root. They are required: BLE, the partition table and
-   mbedTLS's CSR support all come from them.
+   mbedTLS's CSR support all come from them (plus the mDNS options; the
+   `espressif/mdns` dependency itself comes in with CyThing).
 2. In your `main/` source, call `cything_begin()` from `app_main()` and
    implement the two command hooks:
 

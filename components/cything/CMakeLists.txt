@@ -33,6 +33,7 @@ set(CYTHING_SRCS
 	"${CYTHING_SRC}/security/pairing_events.c"
 	"${CYTHING_SRC}/udp_socket/udp_server.c"
 	"${CYTHING_SRC}/udp_socket/udp_response_handler.c"
+	"${CYTHING_SRC}/mdns/mdns_discovery.c"
 	"${CYTHING_SRC}/ota_lib/ota_handler.c"
 	"${CYTHING_SRC}/ota_lib/flash_boot_handler.c"
 	"${CYTHING_SRC}/ota_lib/http_ota_handler.c"
@@ -107,6 +108,7 @@ idf_component_register(SRCS ${CYTHING_SRCS}
 					   INCLUDE_DIRS "${CYTHING_SRC}"
 					   REQUIRES esp-tls esp_timer esp_wifi esp_netif nvs_flash esp_https_ota app_update
 					            esp_partition spi_flash mbedtls esp_driver_gpio lwip bt protocomm
+					            mdns
 					   WHOLE_ARCHIVE
 					  )
 

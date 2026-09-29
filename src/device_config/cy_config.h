@@ -45,6 +45,13 @@ extern const char     cy_scan_response[];
 /** IPv4 multicast group the discovery query arrives on. */
 extern const char     cy_multicast_ipv4[];
 /**
+ * mDNS channel tag: TXT "ch=" and the "#<tag>" suffix of the instance name of
+ * the fixed _cything._tcp service (mdns/mdns_discovery.h). A short id the app
+ * derives from the channel (~8 chars [a-z0-9]); the app filters on it. Empty
+ * by default. The service TYPE is deliberately not configurable.
+ */
+extern const char     cy_mdns_channel_tag[];
+/**
  * BLE base UUID, 16 bytes in NimBLE's little-endian order (the string read
  * backwards), with the 16-bit service slot at indices 12/13 left zero.
  * ble_uuid128_from_base() fills the slot per service.

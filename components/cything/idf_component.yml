@@ -22,3 +22,9 @@ tags:
   - provisioning
   - ble
   - wifi
+  - mdns
+dependencies:
+  # mDNS / DNS-SD responder: advertises _cything._tcp next to the UDP
+  # multicast discovery (doc/mdns-discovery.md). Out of ESP-IDF since 5.0.
+  # Arduino-esp32 3.3.x ships 1.11.3 precompiled, so stay on the same major.
+  espressif/mdns: "^1.11.3"

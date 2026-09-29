@@ -19,6 +19,7 @@
 #define FLASH_BOOT_DB     0
 #define RESPONSE_FIFO_DB  1
 #define BLE_DB            1
+#define MDNS_DB           1
 
 /*
  * CY_LOGx(<switch>, fmt, ...) — same signature as ESP_LOGx minus the tag.

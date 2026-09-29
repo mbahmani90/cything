@@ -20,6 +20,7 @@
 #include "wifi/wifi_info_handler.h"
 #include "ble/ble_beacon.h"
 #include "ble/ble_config.h"
+#include "mdns/mdns_discovery.h"
 
 EventGroupHandle_t s_wifi_event_group;
 
@@ -45,6 +46,7 @@ void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, voi
 #if BLE_SCAN_BEACON_ENABLED
         ble_beacon_on_ip_lost();            /* never advertise a stale address */
 #endif
+        mdns_discovery_on_ip_lost();
         // if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
              esp_wifi_connect();
         //     s_retry_num++;
@@ -105,6 +107,7 @@ void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, voi
 #if BLE_SCAN_BEACON_ENABLED
         ble_beacon_on_ip(&event->ip_info.ip);
 #endif
+        mdns_discovery_on_ip();
         esp_wifi_set_ps(WIFI_PS_NONE);
         if(!all_sockets_init){
             all_sockets_init = true;            
@@ -221,6 +224,10 @@ void wifi_init_sta(void *pvParameters)
         CY_LOGI(WIFI_STA_DB, "connected to AP");
         isConnectedToWifi = true;
         esp_wifi_set_ps(WIFI_PS_NONE);
+        /* Here rather than in event_handler: the esp_event task's stack is
+         * too small for mdns_init(). Once up, the responder follows later
+         * disconnects / reconnects by itself (doc/mdns-discovery.md). */
+        mdns_discovery_start();
 #if IS_REMOTE_CON_ENABLE == 1   
         vTaskDelay(3000 / portTICK_PERIOD_MS);
 

@@ -3,7 +3,7 @@
 ESP32 smart-device firmware, packaged as a library for **Arduino IDE,
 PlatformIO, and plain ESP-IDF alike** — same source, same two hooks, same
 behavior, whichever one you build with. It brings up Wi-Fi (pairing over BLE
-or a soft-AP → station), a TCP command server and UDP discovery on the LAN,
+or a soft-AP → station), a TCP command server, UDP and mDNS (`_cything._tcp`) discovery on the LAN,
 AWS IoT MQTT with per-device certificate provisioning, and HTTPS OTA — and
 leaves exactly two functions for the device developer to write. The Arduino
 sketch below is the shortest way to show the API; the same two functions,
@@ -245,7 +245,7 @@ the 8/16 MB variants.
 | `main/` | ESP-IDF harness only: `app_main.c` (the hooks), `CMakeLists.txt` |
 | `examples/Basic/` | reference sketch, `claim_credentials.ino` + the two `.pem.h` templates, `partitions.csv` |
 | `partitions/` | partition tables per flash size |
-| `doc/` | [cy_thing_lib.md](doc/cy_thing_lib.md) (the library), [tcp-server.md](doc/tcp-server.md), [local-auth.md](doc/local-auth.md) (password pairing + encrypted local link), [udp-discovery.md](doc/udp-discovery.md), [pairing.md](doc/pairing.md), [ble-pairing.md](doc/ble-pairing.md), [ble-scan-beacon.md](doc/ble-scan-beacon.md), [send-buffers.md](doc/send-buffers.md), [tasks.md](doc/tasks.md), [git-workflow.md](doc/git-workflow.md) |
+| `doc/` | [cy_thing_lib.md](doc/cy_thing_lib.md) (the library), [tcp-server.md](doc/tcp-server.md), [local-auth.md](doc/local-auth.md) (password pairing + encrypted local link), [udp-discovery.md](doc/udp-discovery.md), [mdns-discovery.md](doc/mdns-discovery.md), [pairing.md](doc/pairing.md), [ble-pairing.md](doc/ble-pairing.md), [ble-scan-beacon.md](doc/ble-scan-beacon.md), [send-buffers.md](doc/send-buffers.md), [tasks.md](doc/tasks.md), [git-workflow.md](doc/git-workflow.md) |
 | `scripts/release.sh` | cuts a release: one version into `library.properties`, `library.json`, `FIRMWARE_VERSION`; tag; push |
 | `scripts/pack_component.sh` | packages `components/cything` as a self-contained archive for the Espressif Component Registry — see [cy_thing_lib.md](doc/cy_thing_lib.md) §5 "Registry publishing" |
 | `scripts/local_auth_client.py` | pair / authenticate / manage a device over the local link from a computer — see [doc/local-auth.md](doc/local-auth.md) |
