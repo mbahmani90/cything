@@ -18,6 +18,12 @@
 #define RELAY_PIN   26
 #define SENSOR_PIN  34   // ADC input
 
+/* Tell BLE phones subscribed to tx. Returns an error (ignored here) when
+ * nobody is connected or subscribed. */
+static void notify_relay(uint8_t on) {
+  cything_ble_notify("tx", &on, 1);
+}
+
 /* A line received over TCP that none of the built-in handlers (provisioning,
  * OTA, pairing) claimed. `len` excludes the trailing '\n'. */
 bool app_command_handle_line(const char *line, int len, int sock) {
@@ -40,11 +46,13 @@ bool app_command_handle_line(const char *line, int len, int sock) {
   if (cmd == "on_cmd") {
     digitalWrite(RELAY_PIN, HIGH);
     send_data_to_clients(SEND_TO_ALL, "on_res\n", 7);
+    notify_relay(1);                                         // BLE phones too
     return true;
   }
   if (cmd == "off_cmd") {
     digitalWrite(RELAY_PIN, LOW);
     send_data_to_clients(SEND_TO_ALL, "off_res\n", 8);
+    notify_relay(0);
     return true;
   }
   if (cmd == "whoami") {
@@ -74,6 +82,25 @@ bool app_mqtt_command_handle(const char *command, int command_length) {
     return true;
   }
   return false;                                              // default "Hi I'm ESP32 ..." reply
+}
+
+/* ---- BLE: the rx / tx table in cything_network_spec.h ----------------
+ * Once the device is on the router, a phone can connect over BLE and use
+ * the channel's own characteristics. Values are raw bytes. Here: one byte
+ * on rx switches the relay (0x01 on, 0x00 off); tx notifies the new state.
+ * With LOCAL_AUTH_ENFORCE on, only a phone that ran AUTH on the library's
+ * auth characteristic gets through (doc/ble-gatt-server.md). */
+bool app_ble_write(const char *name, const uint8_t *data, int len) {
+  if (strcmp(name, "rx") == 0) {
+    if (len != 1 || data[0] > 1) {
+      return false;                                          // phone sees ATT error 0x81
+    }
+    digitalWrite(RELAY_PIN, data[0] ? HIGH : LOW);
+    cything_ble_notify("tx", data, 1);                       // every subscribed phone
+    send_data_to_clients(SEND_TO_ALL, data[0] ? "on_res\n" : "off_res\n", data[0] ? 7 : 8);   // TCP + MQTT
+    return true;
+  }
+  return false;
 }
 
 /* Optional: per-model claim certificate + key for the provisioning claim

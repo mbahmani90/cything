@@ -13,7 +13,9 @@
  *            the device is not provisioned yet
  *
  * A phone that hears it sends a unicast GET_INFO to that IP — no BLE
- * connection, no GATT. Unicast crosses access points where a multicast
+ * connection, no GATT. Exception: when the sketch has a GATT table
+ * (ble_app_gatt.h, doc/ble-gatt-server.md) the advertisement is connectable
+ * and keeps running without an IP (then without the manufacturer data). Unicast crosses access points where a multicast
  * discovery query may not, which is the whole point. The UDP reply, not the
  * beacon, is what the app trusts: the beacon only says "try this address".
  *

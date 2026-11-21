@@ -24,3 +24,32 @@
  * indices 12 and 13. The library fills the slot per service. */
 #define CYTHING_BLE_BASE_UUID128_BYTES \
     0x18, 0xE4, 0x12, 0x3A, 0x19, 0x64, 0xA3, 0xA1, 0x78, 0x4C, 0x02, 0xDC, 0x00, 0x00, 0x48, 0x6A
+
+/* Station-mode GATT table (doc/ble-gatt-server.md): the channel's own BLE
+ * services, served once the device is on the router. cything_config.ino
+ * hands it to the library as cy_ble_services / cy_ble_service_count; delete
+ * everything below (or leave CYTHING_BLE_SERVICE_COUNT undefined) and station
+ * mode stays a non-connectable scan beacon.
+ *
+ * UUIDs are 16 bytes in NimBLE's little-endian order, like the base UUID
+ * above, with the slot at indices 12/13. Slots 0x0001-0x0006 and
+ * 0x0100-0x01FF are the library's. This example: the default data service
+ *   6A481101-DC02-4C78-A1A3-64193A12E418  service
+ *   6A481102-...                          rx  (phone writes)
+ *   6A481103-...                          tx  (device notifies)
+ */
+#include <CyThingEsp32.h>   /* cything_ble_svc_t / cything_ble_chr_t */
+
+static const cything_ble_chr_t CYTHING_BLE_SVC_1101_CHRS[] = {
+    { "rx", { 0x18, 0xE4, 0x12, 0x3A, 0x19, 0x64, 0xA3, 0xA1, 0x78, 0x4C, 0x02, 0xDC, 0x02, 0x11, 0x48, 0x6A },
+      CYTHING_BLE_WRITE },
+    { "tx", { 0x18, 0xE4, 0x12, 0x3A, 0x19, 0x64, 0xA3, 0xA1, 0x78, 0x4C, 0x02, 0xDC, 0x03, 0x11, 0x48, 0x6A },
+      CYTHING_BLE_NOTIFY },
+};
+
+static const cything_ble_svc_t CYTHING_BLE_SERVICES[] = {
+    { { 0x18, 0xE4, 0x12, 0x3A, 0x19, 0x64, 0xA3, 0xA1, 0x78, 0x4C, 0x02, 0xDC, 0x01, 0x11, 0x48, 0x6A },
+      CYTHING_BLE_SVC_1101_CHRS, 2 },
+};
+
+#define CYTHING_BLE_SERVICE_COUNT 1

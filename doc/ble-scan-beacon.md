@@ -5,6 +5,11 @@
 > line, then heap over an hour with MQTT + TLS up — the beacon keeps the
 > ~60 KB of Bluetooth RAM that station mode used to give back.
 
+> **With a GATT table** (the channel defines its own BLE services) the same
+> advertisement becomes connectable and keeps running without an IP — see
+> [ble-gatt-server.md](ble-gatt-server.md#advertising). Everything below
+> describes the default, table-less beacon.
+
 Once the device is on the router it keeps Bluetooth up as a **non-connectable
 beacon**: it advertises a scan service UUID plus its **LAN IPv4**, and its
 identity as the local name. A phone that hears it sends a **unicast
@@ -55,7 +60,8 @@ match) before a device is listed or connected.
 | `src/wifi/station_mode.c` | `ble_beacon_on_ip()` on got-IP, `ble_beacon_on_ip_lost()` on disconnect |
 
 Set `BLE_SCAN_BEACON_ENABLED 0` to get the old behaviour back (no BLE in
-station mode, RAM released at boot).
+station mode, RAM released at boot) — unless the sketch has a GATT table,
+which keeps BLE up ([ble-gatt-server.md](ble-gatt-server.md)).
 
 ## Testing
 

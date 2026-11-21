@@ -10,6 +10,7 @@
  */
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +26,11 @@ extern "C" {
  * INTERNAL linkage without a prior extern declaration, so an override written
  * without this header in scope is silently ignored. */
 #include "device_config/cy_config.h"
+
+/* Station-mode GATT server (doc/ble-gatt-server.md): the table types
+ * (cything_ble_svc_t / cything_ble_chr_t), cy_ble_services /
+ * cy_ble_service_count, cything_ble_notify() and its error codes. */
+#include "ble/ble_app_gatt.h"
 
 /* Brings up the whole firmware: response FIFOs, NVS, provisioning, boot
  * partition, Wi-Fi (STA or pairing AP) and the TCP/UDP/MQTT servers. Returns
@@ -61,6 +67,35 @@ bool app_command_is_public(const char *line , int len);
  * true once handled; on false the default "Hi I'm ESP32 Smart Device: Remote"
  * reply is published. */
 bool app_mqtt_command_handle(const char *command , int command_length);
+
+/* ---- BLE hooks — station-mode GATT server (doc/ble-gatt-server.md) ----
+ *
+ * Only called when the sketch provides a table (cy_ble_services, normally
+ * generated into cything_network_spec.h). Same rules as the hooks above:
+ * weak defaults in the library, they run on the NimBLE host task — keep them
+ * short, no delay(), no blocking I/O. `name` is the characteristic's name
+ * from the table. Values are raw bytes; the phone app decodes them. */
+
+/* A phone wrote `len` bytes (0..CYTHING_BLE_VALUE_MAX) to a CYTHING_BLE_WRITE
+ * characteristic. `data` has a NUL appended past `len`, so a text value can
+ * be used as a C string. Return true to accept; false fails the write with
+ * ATT error CYTHING_BLE_ATT_ERR_REJECTED. Default: logs and returns false. */
+bool app_ble_write(const char *name, const uint8_t *data, int len);
+
+/* A phone reads a CYTHING_BLE_READ characteristic: copy the value into
+ * `out` (at most `max` = CYTHING_BLE_VALUE_MAX bytes) and return its length.
+ * A value longer than the MTU is read in pieces and this is called once per
+ * piece, so return the same bytes each time. Default: 0 bytes. */
+int  app_ble_read(const char *name, uint8_t *out, int max);
+
+/* The BLE twin of app_command_is_public(): with LOCAL_AUTH_ENFORCE on, a
+ * characteristic is only read, written or notified for a phone that has
+ * proven a paired account on the AUTH characteristic — unless this returns
+ * true for its name. Default: nothing is public. */
+bool app_ble_is_public(const char *name);
+
+/* To push a value: cything_ble_notify(name, data, len), declared in
+ * ble/ble_app_gatt.h (included above). */
 
 /* Publish "<id>:<text>" on the MQTT response topic right now, with a fresh
  * response id. Only valid inside app_mqtt_command_handle() (it needs the live

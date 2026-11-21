@@ -7,6 +7,12 @@
  * task) and the station must hold an IP (ble_beacon_on_ip, esp event loop
  * task). Whichever arrives second starts the advertiser; a mutex keeps the
  * stop/start pair atomic across the two tasks.
+ *
+ * With a GATT table (ble_app_gatt.c, doc/ble-gatt-server.md) the same
+ * advertisement turns connectable (ADV_IND) and runs without an IP too —
+ * the channel's services work with the router down; the manufacturer data
+ * (the IP) is then simply left out. Once every connection slot is taken it
+ * falls back to non-connectable so the scan beacon keeps going.
  */
 #include "ble_beacon.h"
 
@@ -18,6 +24,7 @@
 #include "ble/ble_nimble.h"
 #include "ble/ble_config.h"
 #include "ble/ble_host.h"
+#include "ble/ble_app_gatt.h"
 #include "ble/discovery_mode.h"
 #include "aws/provisioning.h"
 #include "common/cy_log.h"
@@ -37,6 +44,7 @@ static uint8_t  own_addr_type;
 static bool     host_ready = false;
 static bool     have_ip = false;
 static bool     advertising = false;
+static bool     gatt = false;           /* a GATT table is registered: connectable */
 static uint8_t  mfg_data[MFG_LEN] = {
     (uint8_t)(BLE_BEACON_COMPANY_ID & 0xFF), (uint8_t)(BLE_BEACON_COMPANY_ID >> 8),
     BLE_BEACON_PAYLOAD_VER, 0, 0, 0, 0
@@ -87,7 +95,7 @@ static void start_advertising_locked(void){
     struct ble_hs_adv_fields rsp_fields;
     int rc;
 
-    if(!host_ready || !have_ip){
+    if(!host_ready || (!have_ip && !gatt)){
         return;
     }
 
@@ -101,14 +109,18 @@ static void start_advertising_locked(void){
 
     /* Advertising packet: 3 (flags) + 18 (UUID) + 9 (mfg) = 30 of 31 bytes.
      * The UUID must sit here, not in the scan response: iOS and Android's
-     * hardware filters only look at the advertising packet. */
+     * hardware filters only look at the advertising packet. No IP (GATT
+     * server with the router down): no manufacturer data at all, so a phone
+     * never tries a stale or zero address. */
     memset(&fields, 0, sizeof(fields));
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
     fields.uuids128 = (ble_uuid128_t *)&scan_svc_uuid;
     fields.num_uuids128 = 1;
     fields.uuids128_is_complete = 1;
-    fields.mfg_data = mfg_data;
-    fields.mfg_data_len = sizeof(mfg_data);
+    if(have_ip){
+        fields.mfg_data = mfg_data;
+        fields.mfg_data_len = sizeof(mfg_data);
+    }
     rc = ble_gap_adv_set_fields(&fields);
     if(rc != 0){
         CY_LOGE(BLE_DB, "beacon adv fields failed, rc=%d", rc);
@@ -127,9 +139,12 @@ static void start_advertising_locked(void){
     }
 
     /* Non-connectable + scannable (ADV_SCAN_IND): nothing to connect to,
-     * but an active scanner still gets the name. */
+     * but an active scanner still gets the name. With a GATT table and a
+     * free connection slot: connectable undirected (ADV_IND), which is
+     * scannable too, so the payload a phone sees is the same. */
+    bool connectable = gatt && ble_app_gatt_conn_slot_free();
     memset(&adv_params, 0, sizeof(adv_params));
-    adv_params.conn_mode = BLE_GAP_CONN_MODE_NON;
+    adv_params.conn_mode = connectable ? BLE_GAP_CONN_MODE_UND : BLE_GAP_CONN_MODE_NON;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
     adv_params.itvl_min  = BLE_GAP_ADV_ITVL_MS(BLE_BEACON_ADV_INTERVAL_MIN_MS);
     adv_params.itvl_max  = BLE_GAP_ADV_ITVL_MS(BLE_BEACON_ADV_INTERVAL_MAX_MS);
@@ -139,12 +154,33 @@ static void start_advertising_locked(void){
         return;
     }
     advertising = true;
-    CY_LOGI(BLE_DB, "beacon advertising as %s at %u.%u.%u.%u", adv_name,
-            mfg_data[3], mfg_data[4], mfg_data[5], mfg_data[6]);
+    if(have_ip){
+        CY_LOGI(BLE_DB, "beacon advertising as %s at %u.%u.%u.%u%s", adv_name,
+                mfg_data[3], mfg_data[4], mfg_data[5], mfg_data[6], connectable ? ", connectable" : "");
+    }else{
+        CY_LOGI(BLE_DB, "beacon advertising as %s, no IP%s", adv_name, connectable ? ", connectable" : "");
+    }
 }
 
 static int gap_event(struct ble_gap_event *event, void *arg){
+    /* The GATT server's share first: connection table, subscriptions,
+     * pairing. Never takes `lock`, so a notification's NOTIFY_TX (fired on
+     * the notifying task) cannot deadlock here. */
+    int rc = ble_app_gatt_gap_event(event);
+
     switch(event->type){
+    case BLE_GAP_EVENT_CONNECT:
+    case BLE_GAP_EVENT_DISCONNECT:
+        /* Connectable advertising ends on a connection (or a failed
+         * attempt); a disconnect frees a slot. Either way re-advertise,
+         * connectable while a slot is free. */
+        xSemaphoreTake(lock, portMAX_DELAY);
+        if(event->type == BLE_GAP_EVENT_CONNECT){
+            advertising = false;
+        }
+        start_advertising_locked();
+        xSemaphoreGive(lock);
+        break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
         /* Not expected with BLE_HS_FOREVER; resume if the controller ever
          * ends the set on its own. */
@@ -156,7 +192,7 @@ static int gap_event(struct ble_gap_event *event, void *arg){
     default:
         break;
     }
-    return 0;
+    return rc;
 }
 
 /* ---------------------------------------------------------------- host --- */
@@ -196,11 +232,14 @@ void ble_beacon_start(void){
      * can connect; the GAP name is what a generic scanner app shows. */
     ble_svc_gap_init();
     ble_svc_gatt_init();
+    /* The channel's own services, if the sketch has a table. Before
+     * ble_host_run(): the host builds the attribute table on sync. */
+    gatt = ble_app_gatt_service_count() > 0 && ble_app_gatt_register() == 0;
     build_name();
     ble_svc_gap_device_name_set(adv_name);
 
     ble_host_run();                         /* advertising starts from on_sync */
-    ble_host_log_started("beacon", adv_name);
+    ble_host_log_started(gatt ? "beacon + GATT server" : "beacon", adv_name);
 }
 
 void ble_beacon_on_ip(const esp_ip4_addr_t *ip){
@@ -224,6 +263,7 @@ void ble_beacon_on_ip_lost(void){
     xSemaphoreTake(lock, portMAX_DELAY);
     have_ip = false;
     stop_advertising_locked();
+    start_advertising_locked();             /* GATT server: again, without the IP */
     xSemaphoreGive(lock);
 }
 

@@ -77,3 +77,34 @@
  * 4.x controller is 100 ms. */
 #define BLE_BEACON_ADV_INTERVAL_MIN_MS 200
 #define BLE_BEACON_ADV_INTERVAL_MAX_MS 300
+
+/* ------------------------------------------- station-mode GATT server --- */
+
+/* Station-mode GATT server for the channel's own services
+ * (ble_app_gatt.c, doc/ble-gatt-server.md). It runs only when the sketch
+ * provides a table (cy_ble_services, cy_ble_service_count >= 1); the beacon
+ * then advertises connectably.
+ *
+ * Library-owned slots in the channel base UUID: the server adds one service
+ * of its own, the AUTH service, where a phone proves it is paired
+ * (AUTH1..3, the same lines as on TCP). The app must not give a channel
+ * service or characteristic any slot from 0x0100 to 0x01FF (0x0101 is the
+ * scan beacon). */
+#define BLE_APP_AUTH_SVC_ID     0x0110
+#define BLE_APP_AUTH_CHR_ID     0x0111   /* write: AUTH1/AUTH3 line; read + notify: the reply */
+
+/* 1: every channel characteristic and the auth characteristic need an
+ * encrypted link (LE Secure Connections, Just Works). The phone's OS pairs
+ * on the first access that needs it. With bonding (below) the user sees that
+ * pairing dialog once per phone, not once per connection. 0: plaintext
+ * link (debugging only; the AUTH proof then travels in clear). */
+#ifndef BLE_APP_GATT_REQUIRE_ENCRYPTION
+#define BLE_APP_GATT_REQUIRE_ENCRYPTION 1
+#endif
+
+/* Keep the LE bond so a phone re-encrypts without pairing again. Bonds live
+ * in the NimBLE store (NVS with CONFIG_BT_NIMBLE_NVS_PERSIST=y, else RAM);
+ * when it is full the oldest bond is dropped. */
+#ifndef BLE_APP_GATT_BONDING
+#define BLE_APP_GATT_BONDING 1
+#endif
