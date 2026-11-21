@@ -21,6 +21,7 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* ---- the table ------------------------------------------------------- */
@@ -79,6 +80,7 @@ int cything_ble_notify(const char *name, const uint8_t *data, int len);
  * read / write). 0x80-0x9F is the application range of the ATT spec. */
 #define CYTHING_BLE_ATT_ERR_AUTH      0x80   /* not authenticated: run AUTH on the auth characteristic */
 #define CYTHING_BLE_ATT_ERR_REJECTED  0x81   /* app_ble_write() returned false */
+#define CYTHING_BLE_ATT_ERR_BUSY      0x82   /* auth link: the previous line is still being handled */
 
 /* ---- library internals (not for sketches) ---------------------------- */
 
@@ -101,6 +103,10 @@ bool ble_app_gatt_running(void);
  * subscribe, encryption, MTU, repeat pairing). Returns the value the GAP
  * callback must return for this event (only REPEAT_PAIRING needs one). */
 int  ble_app_gatt_gap_event(struct ble_gap_event *event);
+
+/* security/local_link_io.c: bytes the pairing code sends to a BLE
+ * pseudo-socket, queued for the phone to read on the auth characteristic. */
+void ble_app_gatt_link_send(int sock, const void *data, size_t len);
 
 /* True while another phone may still connect. */
 bool ble_app_gatt_conn_slot_free(void);

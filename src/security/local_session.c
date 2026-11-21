@@ -5,6 +5,7 @@
 #include "freertos/semphr.h"
 #include "esp_srp.h"
 #include "lwip/sockets.h"
+#include "security/local_link_io.h"
 
 #include "common/cy_log.h"
 
@@ -146,6 +147,16 @@ int local_session_count(void){
     xSemaphoreTake(pool_mutex, portMAX_DELAY);
     for(int i = 0 ; i < LOCAL_SESSION_MAX ; i++){
         if(pool[i].sock != -1) n++;
+    }
+    xSemaphoreGive(pool_mutex);
+    return n;
+}
+
+int local_session_count_tcp(void){
+    int n = 0;
+    xSemaphoreTake(pool_mutex, portMAX_DELAY);
+    for(int i = 0 ; i < LOCAL_SESSION_MAX ; i++){
+        if(pool[i].sock != -1 && !local_link_is_ble(pool[i].sock)) n++;
     }
     xSemaphoreGive(pool_mutex);
     return n;

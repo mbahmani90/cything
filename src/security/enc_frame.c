@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "lwip/sockets.h"
+#include "security/local_link_io.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/version.h"
 
@@ -100,7 +101,7 @@ void enc_frame_init(void){
 static void send_plain_err(int sock, const char *text){
     char buf[32];
     int n = snprintf(buf, sizeof(buf), "%s\n", text);
-    send(sock, buf, n, 0);
+    local_link_send(sock, buf, n);
 }
 
 bool enc_frame_unwrap(char *line, int *len, int sock, size_t capacity){
@@ -185,7 +186,7 @@ void enc_frame_send(int sock, const char *payload, size_t payload_len){
 
     local_session_t *s = local_session_find(sock);
     if(!session_keyed(s)){
-        send(sock, payload, payload_len, 0);
+        local_link_send(sock, payload, payload_len);
         return;
     }
 
@@ -224,7 +225,7 @@ void enc_frame_send(int sock, const char *payload, size_t payload_len){
         mbedtls_base64_encode((unsigned char *)frame + pos, sizeof(frame) - pos, &n, ct, ct_len);
         pos += n;
         frame[pos++] = '\n';
-        send(sock, frame, pos, 0);
+        local_link_send(sock, frame, pos);
     }else{
         CY_LOGE(TCP_SERVER_DB, "enc: sock %d encrypt failed (%d)", sock, rc);
     }

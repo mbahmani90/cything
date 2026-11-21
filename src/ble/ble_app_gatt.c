@@ -7,9 +7,13 @@
  *
  *   - the channel's services, built at runtime from cy_ble_services into
  *     NimBLE ble_gatt_svc_def / ble_gatt_chr_def arrays (heap, once);
- *   - the AUTH service (BLE_APP_AUTH_SVC_ID), where a phone proves it holds
- *     its account's K_account with the same AUTH1..3 lines as on TCP
- *     (security/local_auth.h). Only AUTH: PAKE and ENROLL stay on TCP;
+ *   - the AUTH service (BLE_APP_AUTH_SVC_ID): an INFO characteristic (the
+ *     GET_INFO CSV) and a line link where a phone runs the same PAKE1..4,
+ *     ENROLL and AUTH1..3 lines as on TCP. Each connection is a
+ *     pseudo-socket in the local_session pool (security/local_link_io.h),
+ *     so pake_handler.c / local_auth.c / enc_frame.c serve it unchanged;
+ *     the lines run on a short-lived worker task (SRP-3072 needs ~10 KB of
+ *     stack and a second or two, too much for the host task);
  *   - LOCAL_AUTH_ENFORCE decides, as on TCP, whether a characteristic needs
  *     an authenticated phone behind the link (access_allowed()).
  *
@@ -25,16 +29,20 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "mbedtls/base64.h"
-#include "esp_random.h"
+#include "freertos/task.h"
 #include "ble/ble_nimble.h"
 #include "ble/ble_config.h"
 #include "ble/ble_host.h"
 #include "common/cy_log.h"
 #include "device_config/device_config.h"
+#include "common/task_config.h"
+#include "security/access_policy.h"
 #include "security/device_password.h"
+#include "security/enc_frame.h"
 #include "security/local_auth.h"
-#include "security/paired_list.h"
+#include "security/local_link_io.h"
+#include "security/local_session.h"
+#include "security/pake_handler.h"
 #include "udp_socket/udp_response_handler.h"
 #include "udp_socket/udp_server.h"
 
@@ -88,28 +96,33 @@ static struct ble_gatt_svc_def *svc_defs;    /* svc_total + auth + {0}   */
 
 static ble_uuid128_t auth_svc_uuid;
 static ble_uuid128_t auth_chr_uuid;
-static uint16_t      auth_val_handle;
 static ble_uuid128_t info_chr_uuid;
 
 static bool running = false;
 
 /* -------------------------------------------------------- connections --- */
 
-enum { AUTH_NONE = 0, AUTH_WAIT_PROOF, AUTH_OK };
-
-#define AUTH_REPLY_MAX 96    /* "AUTH2:" + b64(16) + "," + b64(32) = 75 */
+/* The line link on the auth characteristic (doc/ble-gatt-server.md, "Line
+ * link"). An attribute holds at most 512 bytes and PAKE lines are longer,
+ * so both directions move in chunks of up to LINK_CHUNK bytes:
+ *   phone -> device: writes of up to LINK_CHUNK bytes, the line ending in '\n';
+ *   device -> phone: a read returns the current chunk of the reply (empty
+ *                    while the worker is still on it); a write of a lone
+ *                    "\n" with no line in progress moves to the next chunk. */
+#define LINK_CHUNK     500
+#define LINK_LINE_MAX  1200            /* an ENC: frame of ENC_FRAME_PLAIN_MAX, base64 */
+#define CONN_DRAINING  0xFFFE          /* disconnected, its worker still running */
 
 typedef struct {
-    uint16_t handle;                     /* BLE_HS_CONN_HANDLE_NONE: free slot */
-    uint8_t  auth;                       /* AUTH_* */
-    bool     owner;
-    bool     auth_subscribed;
-    char     sub[PAIRED_SUB_MAX + 1];    /* account, re-checked on every access */
-    uint8_t  key[PAIRED_KEY_LEN];        /* K_account during AUTH1..3 only */
-    uint8_t  np[LOCAL_AUTH_NONCE_LEN];
-    uint8_t  nd[LOCAL_AUTH_NONCE_LEN];
-    char     reply[AUTH_REPLY_MAX];      /* what a read of the auth chr returns */
-    uint8_t *subs;                       /* bitmap, one bit per chr_rt entry */
+    uint16_t handle;                   /* BLE_HS_CONN_HANDLE_NONE: free slot */
+    int      sock;                     /* pseudo-socket in the local_session pool, -1: none */
+    bool     busy;                     /* a line is with the worker */
+    char    *rx;                       /* [LINK_LINE_MAX + 2]: the line being written */
+    int      rx_len;
+    char    *tx;                       /* [LINK_LINE_MAX + 2]: the reply being read */
+    int      tx_len;
+    int      tx_head;                  /* start of the chunk a read returns */
+    uint8_t *subs;                     /* bitmap, one bit per chr_rt entry */
 } conn_t;
 
 static SemaphoreHandle_t lock;
@@ -123,10 +136,21 @@ static conn_t *conn_find(uint16_t handle){
     return NULL;
 }
 
+/* Live or draining connection on pseudo-socket `sock`. */
+static conn_t *conn_by_sock(int sock){
+    for(int i = 0 ; i < MAX_CONN ; i++){
+        if(conns[i].handle != BLE_HS_CONN_HANDLE_NONE && conns[i].sock == sock) return &conns[i];
+    }
+    return NULL;
+}
+
+/* Caller holds `lock`. Frees the link buffers, keeps the subscription bitmap. */
 static void conn_wipe(conn_t *c){
     uint8_t *subs = c->subs;
+    free(c->rx);
     memset(c, 0, sizeof(*c));
     c->handle = BLE_HS_CONN_HANDLE_NONE;
+    c->sock = -1;
     c->subs = subs;
     if(subs != NULL) memset(subs, 0, subs_bytes);
 }
@@ -147,18 +171,13 @@ static int chr_by_handle(uint16_t val_handle){
 
 /* ------------------------------------------------------------- policy --- */
 
-/* Caller holds `lock`. The phone behind `c` has proven a paired account
- * that is still paired (REVOKE / RESET / PWSET drop it on the next access),
- * or the device is open (no password: everything is public, as on TCP). */
+/* Caller holds `lock`. The phone behind `c` has paired (ENROLL) or
+ * authenticated (AUTH) on this connection, exactly as access_policy counts
+ * a TCP socket; REVOKE / RESET / PWSET drop that through local_session. Or
+ * the device is open (no password: everything is public, as on TCP). */
 static bool conn_authorized_locked(conn_t *c){
     if(!device_password_is_set()) return true;
-    if(c == NULL || c->auth != AUTH_OK) return false;
-    if(paired_list_find(c->sub) < 0){
-        CY_LOGW(BLE_DB, "gatt: conn %u account no longer paired", c->handle);
-        c->auth = AUTH_NONE;
-        return false;
-    }
-    return true;
+    return c != NULL && c->sock >= 0 && access_policy_sock_authenticated(c->sock);
 }
 
 /* May the phone on `conn_handle` read / write / be notified on `idx`? */
@@ -212,144 +231,128 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-/* ---------------------------------------------------------------- auth --- */
+/* ---------------------------------------------------------- line link --- */
 
-#define B64_LEN(n) ((((n) + 2) / 3) * 4)
-
-/* HMAC(K_account, label ‖ a ‖ b) — the shape of both AUTH proofs, as in
- * local_auth.c. */
-static void auth_proof(const uint8_t key[PAIRED_KEY_LEN], const char *label,
-                       const uint8_t *a, const uint8_t *b, uint8_t out[LOCAL_AUTH_MAC_LEN]){
-    uint8_t msg[3 + 2 * LOCAL_AUTH_NONCE_LEN];
-    memcpy(msg, label, 3);
-    memcpy(msg + 3, a, LOCAL_AUTH_NONCE_LEN);
-    memcpy(msg + 3 + LOCAL_AUTH_NONCE_LEN, b, LOCAL_AUTH_NONCE_LEN);
-    local_auth_hmac(key, PAIRED_KEY_LEN, msg, sizeof(msg), out);
-}
-
-static bool b64_field(const char *p, const char *end, uint8_t *out, size_t out_size, size_t *out_len){
-    return mbedtls_base64_decode(out, out_size, out_len, (const unsigned char *)p, (size_t)(end - p)) == 0;
-}
-
-/* Caller holds `lock`. AUTH1:<b64 userSub>,<b64 N_p>  ->  AUTH2:<b64 N_d>,<b64 mac> */
-static void auth1_locked(conn_t *c, const char *line, int len){
-    const char *p = line + 6, *end = line + len;
-    const char *comma = memchr(p, ',', end - p);
-    uint8_t sub[PAIRED_SUB_MAX + 1], np[LOCAL_AUTH_NONCE_LEN + 1];
-    size_t sub_len = 0, np_len = 0;
-
-    memset(c->key, 0, sizeof(c->key));
-    c->auth = AUTH_NONE;
-
-    if(comma == NULL || memchr(comma + 1, ',', end - comma - 1) != NULL ||
-       !b64_field(p, comma, sub, sizeof(sub) - 1, &sub_len) || sub_len == 0 ||
-       !b64_field(comma + 1, end, np, sizeof(np), &np_len) || np_len != LOCAL_AUTH_NONCE_LEN){
-        snprintf(c->reply, sizeof(c->reply), "ERR:BADFMT");
-        return;
-    }
-    for(size_t i = 0 ; i < sub_len ; i++){
-        if(sub[i] < 0x20 || sub[i] == 0x7f){
-            snprintf(c->reply, sizeof(c->reply), "ERR:BADFMT");
-            return;
+/* local_link_send() for a BLE pseudo-socket: append to the reply the phone
+ * reads. Runs on the worker task. */
+void ble_app_gatt_link_send(int sock, const void *data, size_t len){
+    xSemaphoreTake(lock, portMAX_DELAY);
+    conn_t *c = conn_by_sock(sock);
+    if(c != NULL && c->tx != NULL){
+        if(c->tx_len + (int)len <= LINK_LINE_MAX + 2){
+            memcpy(c->tx + c->tx_len, data, len);
+            c->tx_len += (int)len;
+        }else{
+            CY_LOGW(BLE_DB, "gatt: link reply too long (%u), dropped", (unsigned)len);
         }
     }
-    sub[sub_len] = 0;
-
-    paired_entry_t entry;
-    int index = paired_list_find((const char *)sub);
-    if(index < 0 || !paired_list_get(index, &entry)){
-        snprintf(c->reply, sizeof(c->reply), "ERR:UNKNOWN");
-        return;
-    }
-    memcpy(c->sub, sub, sub_len + 1);
-    memcpy(c->key, entry.key, sizeof(c->key));
-    c->owner = entry.role == PAIRED_ROLE_OWNER;
-    memset(&entry, 0, sizeof(entry));
-    memcpy(c->np, np, LOCAL_AUTH_NONCE_LEN);
-    esp_fill_random(c->nd, LOCAL_AUTH_NONCE_LEN);
-    c->auth = AUTH_WAIT_PROOF;
-
-    uint8_t mac[LOCAL_AUTH_MAC_LEN];
-    auth_proof(c->key, "dev", c->np, c->nd, mac);
-
-    size_t n = 0;
-    int pos = snprintf(c->reply, sizeof(c->reply), "AUTH2:");
-    mbedtls_base64_encode((unsigned char *)c->reply + pos, sizeof(c->reply) - pos, &n, c->nd, LOCAL_AUTH_NONCE_LEN);
-    pos += n;
-    c->reply[pos++] = ',';
-    mbedtls_base64_encode((unsigned char *)c->reply + pos, sizeof(c->reply) - pos, &n, mac, sizeof(mac));
-    c->reply[pos + n] = 0;
+    xSemaphoreGive(lock);
 }
 
-/* Caller holds `lock`. AUTH3:<b64 HMAC(K_account, "phn" ‖ N_d ‖ N_p)>  ->  AUTHOK:<owner|user> */
-static void auth3_locked(conn_t *c, const char *line, int len){
-    if(c->auth != AUTH_WAIT_PROOF){
-        snprintf(c->reply, sizeof(c->reply), "ERR:SEQ");
-        return;
+typedef struct {
+    conn_t *conn;
+    int     sock;
+    int     len;
+    char    line[LINK_LINE_MAX + 2];   /* the line, '\n', NUL: what the TCP dispatch passes */
+} link_job_t;
+
+/* One line through the same handlers as tcp_dispatch_line(): ENC: unwrap,
+ * then PAKE or ENROLL / AUTH. Nothing else runs over the BLE link. */
+static void link_worker(void *arg){
+    link_job_t *job = arg;
+    int len = job->len;
+    if(enc_frame_unwrap(job->line, &len, job->sock, sizeof(job->line))){
+        if(!pake_handle_line(job->line, len, job->sock) && !local_auth_handle_line(job->line, len, job->sock)){
+            security_send_line(job->sock, "ERR:BADFMT");
+        }
     }
-    uint8_t got[LOCAL_AUTH_MAC_LEN + 1], expected[LOCAL_AUTH_MAC_LEN];
-    size_t got_len = 0;
-    bool ok = b64_field(line + 6, line + len, got, sizeof(got), &got_len) && got_len == LOCAL_AUTH_MAC_LEN;
-    if(ok){
-        auth_proof(c->key, "phn", c->nd, c->np, expected);
-        ok = local_auth_ct_equal(got, expected, LOCAL_AUTH_MAC_LEN);
+
+    xSemaphoreTake(lock, portMAX_DELAY);
+    conn_t *c = job->conn;
+    c->busy = false;
+    if(c->handle == CONN_DRAINING){              /* the phone left while we worked */
+        local_session_release(c->sock);
+        conn_wipe(c);
     }
-    memset(c->key, 0, sizeof(c->key));   /* no session key on BLE: the link is LE-encrypted */
-    if(!ok){
-        c->auth = AUTH_NONE;
-        snprintf(c->reply, sizeof(c->reply), got_len == LOCAL_AUTH_MAC_LEN ? "ERR:BADAUTH" : "ERR:BADFMT");
-        CY_LOGW(BLE_DB, "gatt: conn %u bad AUTH3", c->handle);
-        return;
-    }
-    c->auth = AUTH_OK;
-    snprintf(c->reply, sizeof(c->reply), "AUTHOK:%s", c->owner ? "owner" : "user");
-    CY_LOGI(BLE_DB, "gatt: conn %u authenticated (%s)", c->handle, c->owner ? "owner" : "user");
+    xSemaphoreGive(lock);
+    free(job);
+    vTaskDelete(NULL);
 }
 
 static int auth_access(uint16_t conn_handle, uint16_t attr_handle,
                        struct ble_gatt_access_ctxt *ctxt, void *arg){
     (void)attr_handle; (void)arg;
-    char reply[AUTH_REPLY_MAX];
-    bool notify = false;
+    static char chunk[LINK_CHUNK];               /* host task only */
 
     if(ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR){
+        int n = 0;
         xSemaphoreTake(lock, portMAX_DELAY);
         conn_t *c = conn_find(conn_handle);
-        snprintf(reply, sizeof(reply), "%s", c != NULL ? c->reply : "");
+        if(c != NULL && c->tx != NULL){
+            n = c->tx_len - c->tx_head;
+            if(n > LINK_CHUNK) n = LINK_CHUNK;
+            if(n < 0) n = 0;
+            memcpy(chunk, c->tx + c->tx_head, n);
+        }
         xSemaphoreGive(lock);
-        return os_mbuf_append(ctxt->om, reply, strlen(reply)) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+        return os_mbuf_append(ctxt->om, chunk, n) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
     if(ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR){
         return BLE_ATT_ERR_UNLIKELY;
     }
 
-    char line[160];
     uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
-    if(len >= sizeof(line)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    if(ble_hs_mbuf_to_flat(ctxt->om, line, sizeof(line) - 1, &len) != 0) return BLE_ATT_ERR_UNLIKELY;
-    while(len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) len--;
-    line[len] = 0;
+    if(len > LINK_CHUNK) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    if(ble_hs_mbuf_to_flat(ctxt->om, chunk, LINK_CHUNK, &len) != 0) return BLE_ATT_ERR_UNLIKELY;
 
+    int rc = 0;
+    link_job_t *job = NULL;
     xSemaphoreTake(lock, portMAX_DELAY);
     conn_t *c = conn_find(conn_handle);
-    if(c == NULL){
-        xSemaphoreGive(lock);
-        return BLE_ATT_ERR_UNLIKELY;
+    if(c == NULL || c->rx == NULL || c->sock < 0){
+        rc = BLE_ATT_ERR_UNLIKELY;
+    }else if(c->rx_len == 0 && len == 1 && chunk[0] == '\n'){
+        /* "next chunk" */
+        int n = c->tx_len - c->tx_head;
+        c->tx_head += n > LINK_CHUNK ? LINK_CHUNK : n;
+        if(c->tx_head >= c->tx_len) c->tx_head = c->tx_len = 0;
+    }else if(c->busy){
+        rc = CYTHING_BLE_ATT_ERR_BUSY;
+    }else if(c->rx_len + len > LINK_LINE_MAX + 1){
+        c->rx_len = 0;
+        rc = BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    }else{
+        memcpy(c->rx + c->rx_len, chunk, len);
+        c->rx_len += len;
+        if(c->rx[c->rx_len - 1] == '\n'){
+            int n = c->rx_len - 1;
+            while(n > 0 && c->rx[n - 1] == '\r') n--;
+            c->rx_len = 0;
+            c->tx_len = c->tx_head = 0;          /* a new request replaces the old reply */
+            job = malloc(sizeof(*job));
+            if(job != NULL && n > 0){
+                job->conn = c;
+                job->sock = c->sock;
+                job->len  = n;
+                memcpy(job->line, c->rx, n);
+                job->line[n] = '\n';
+                job->line[n + 1] = 0;
+                c->busy = true;
+                if(xTaskCreate(link_worker, "ble_link", BLE_LINK_TASK_STACK_SIZE, job,
+                               BLE_LINK_TASK_PRIORITY, NULL) != pdPASS){
+                    c->busy = false;
+                    free(job);
+                    job = NULL;
+                    rc = BLE_ATT_ERR_INSUFFICIENT_RES;
+                }
+            }else{
+                free(job);
+                job = NULL;
+            }
+        }
     }
-    if(len > 6 && memcmp(line, "AUTH1:", 6) == 0)      auth1_locked(c, line, len);
-    else if(len > 6 && memcmp(line, "AUTH3:", 6) == 0) auth3_locked(c, line, len);
-    else snprintf(c->reply, sizeof(c->reply), "ERR:BADFMT");
-    snprintf(reply, sizeof(reply), "%s", c->reply);
-    notify = c->auth_subscribed;
     xSemaphoreGive(lock);
-
-    /* The reply is also readable; the notification is the fast path (it is
-     * cut at MTU-3, so a phone on the 23-byte default MTU reads instead). */
-    if(notify){
-        struct os_mbuf *om = ble_hs_mbuf_from_flat(reply, strlen(reply));
-        if(om != NULL) ble_gatts_notify_custom(conn_handle, auth_val_handle, om);
-    }
-    return 0;
+    return rc;
 }
 
 /* --------------------------------------------------------------- info --- */
@@ -385,7 +388,8 @@ int cything_ble_notify(const char *name, const uint8_t *data, int len){
     xSemaphoreTake(lock, portMAX_DELAY);
     for(int i = 0 ; i < MAX_CONN ; i++){
         conn_t *c = &conns[i];
-        if(c->handle != BLE_HS_CONN_HANDLE_NONE && (c->subs[idx / 8] & (1u << (idx % 8)))){
+        if(c->handle != BLE_HS_CONN_HANDLE_NONE && c->handle != CONN_DRAINING &&
+           (c->subs[idx / 8] & (1u << (idx % 8)))){
             targets[n_targets++] = c->handle;
         }
     }
@@ -432,6 +436,14 @@ int ble_app_gatt_gap_event(struct ble_gap_event *event){
             if(c != NULL){
                 conn_wipe(c);
                 c->handle = event->connect.conn_handle;
+                /* The line link: buffers and a session only while connected.
+                 * Without them the channel's public characteristics still work. */
+                c->rx = malloc(2 * (LINK_LINE_MAX + 2));
+                if(c->rx != NULL){
+                    c->tx = c->rx + LINK_LINE_MAX + 2;
+                    int sock = LOCAL_LINK_BLE_SOCK_BASE + event->connect.conn_handle;
+                    if(local_session_acquire(sock, LOCAL_LINK_BLE_PEER_IP) != NULL) c->sock = sock;
+                }
             }
             xSemaphoreGive(lock);
             if(c == NULL){
@@ -446,7 +458,14 @@ int ble_app_gatt_gap_event(struct ble_gap_event *event){
     case BLE_GAP_EVENT_DISCONNECT: {
         xSemaphoreTake(lock, portMAX_DELAY);
         conn_t *c = conn_find(event->disconnect.conn.conn_handle);
-        if(c != NULL) conn_wipe(c);
+        if(c != NULL){
+            if(c->busy){
+                c->handle = CONN_DRAINING;           /* the worker releases it */
+            }else{
+                if(c->sock >= 0) local_session_release(c->sock);
+                conn_wipe(c);
+            }
+        }
         xSemaphoreGive(lock);
         CY_LOGI(BLE_DB, "gatt: conn %u disconnected, reason %d",
                 event->disconnect.conn.conn_handle, event->disconnect.reason);
@@ -459,14 +478,10 @@ int ble_app_gatt_gap_event(struct ble_gap_event *event){
         xSemaphoreTake(lock, portMAX_DELAY);
         conn_t *c = conn_find(event->subscribe.conn_handle);
         if(c != NULL){
-            if(h == auth_val_handle){
-                c->auth_subscribed = on;
-            }else{
-                int idx = chr_by_handle(h);
-                if(idx >= 0){
-                    if(on) c->subs[idx / 8] |=  (uint8_t)(1u << (idx % 8));
-                    else   c->subs[idx / 8] &= (uint8_t)~(1u << (idx % 8));
-                }
+            int idx = chr_by_handle(h);
+            if(idx >= 0){
+                if(on) c->subs[idx / 8] |=  (uint8_t)(1u << (idx % 8));
+                else   c->subs[idx / 8] &= (uint8_t)~(1u << (idx % 8));
             }
         }
         xSemaphoreGive(lock);
@@ -649,8 +664,7 @@ int ble_app_gatt_register(void){
     struct ble_gatt_chr_def *auth = &chr_defs[d];
     auth->uuid       = &auth_chr_uuid.u;
     auth->access_cb  = auth_access;
-    auth->val_handle = &auth_val_handle;
-    auth->flags      = F_READ | F_WRITE | F_NOTIFY;
+    auth->flags      = F_READ | F_WRITE;
     struct ble_gatt_chr_def *info = &chr_defs[d + 1];
     info->uuid       = &info_chr_uuid.u;
     info->access_cb  = info_access;
@@ -671,7 +685,10 @@ int ble_app_gatt_register(void){
     }
 
     if(lock == NULL) lock = xSemaphoreCreateMutex();
-    for(int i = 0 ; i < MAX_CONN ; i++) conn_wipe(&conns[i]);
+    for(int i = 0 ; i < MAX_CONN ; i++){
+        conns[i].rx = NULL;
+        conn_wipe(&conns[i]);
+    }
 
     /* LE Secure Connections, no I/O -> Just Works. Bonding keeps the OS
      * pairing dialog to once per phone. */

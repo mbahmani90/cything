@@ -83,7 +83,7 @@ void tcp_server_task(void *pvParameters)
 
             // At the cap: the same phone reconnecting replaces its own older
             // connection(s) (their recv tasks clean up); anyone else is refused.
-            if(local_session_count() >= TCP_CLIENT_MAX && local_session_shutdown_peer(peer_ip) == 0){
+            if(local_session_count_tcp() >= TCP_CLIENT_MAX && local_session_shutdown_peer(peer_ip) == 0){
                 CY_LOGW(TCP_SERVER_DB, "%d connections already, rejecting", TCP_CLIENT_MAX);
                 shutdown(sock, 0);
                 close(sock);

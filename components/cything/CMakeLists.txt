@@ -24,6 +24,7 @@ set(CYTHING_SRCS
 	"${CYTHING_SRC}/tcp_server/tcp_client_list.c"
 	"${CYTHING_SRC}/tcp_server/tcp_response_fifo.c"
 	"${CYTHING_SRC}/security/local_session.c"
+	"${CYTHING_SRC}/security/local_link_io.c"
 	"${CYTHING_SRC}/security/device_password.c"
 	"${CYTHING_SRC}/security/paired_list.c"
 	"${CYTHING_SRC}/security/pake_handler.c"
