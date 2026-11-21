@@ -7,7 +7,9 @@
  * Shared NimBLE bring-up for the device's two BLE modes, which never run at
  * the same time:
  *   - pairing (soft-AP) mode: ble_pairing.c, a connectable GATT server;
- *   - station mode:           ble_beacon.c, a non-connectable scan beacon.
+ *   - station mode:           ble_beacon.c, a scan beacon — non-connectable,
+ *                             or connectable with the channel's GATT table
+ *                             (ble_app_gatt.c) when the sketch has one.
  * Each mode sets its own ble_hs_cfg callbacks / services / name between
  * ble_host_init() and ble_host_run(), and calls ble_host_resolve_addr() from
  * its sync callback. Bringing the host up twice in one boot is not supported.

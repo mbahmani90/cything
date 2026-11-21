@@ -43,9 +43,7 @@ void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, voi
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         isConnectedToWifi = false;
-#if BLE_SCAN_BEACON_ENABLED
-        ble_beacon_on_ip_lost();            /* never advertise a stale address */
-#endif
+        ble_beacon_on_ip_lost();            /* never advertise a stale address; no-op without BLE */
         mdns_discovery_on_ip_lost();
         // if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
              esp_wifi_connect();
@@ -104,9 +102,7 @@ void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, voi
 #else
         wifi_update_device_ip(p_netif_sta);  
         isConnectedToWifi = true;
-#if BLE_SCAN_BEACON_ENABLED
-        ble_beacon_on_ip(&event->ip_info.ip);
-#endif
+        ble_beacon_on_ip(&event->ip_info.ip);   /* no-op unless ble_beacon_start() ran */
         mdns_discovery_on_ip();
         esp_wifi_set_ps(WIFI_PS_NONE);
         if(!all_sockets_init){

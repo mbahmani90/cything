@@ -260,6 +260,11 @@ the verdict is only logged (debug) and everything is accepted as before.
 `1`: refusals as in the table. Owner commands check the owner role inside
 regardless of the flag.
 
+The station-mode BLE GATT server applies the same flag to the channel's
+characteristics: AUTH1..3 (same lines) on its auth characteristic, then
+read / write / notify per `app_ble_is_public()` — see
+[ble-gatt-server.md](ble-gatt-server.md#security).
+
 Broadcasts: `send_data_to_clients(SEND_TO_ALL, …)` reaches every **paired**
 socket when enforcing (an un-paired socket may only be present for a
 public command and must not see a paired phone's data); `SEND_TO_ALL_PUBLIC`

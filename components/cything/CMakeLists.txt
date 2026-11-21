@@ -15,6 +15,7 @@ set(CYTHING_SRCS
 	"${CYTHING_SRC}/ble/ble_host.c"
 	"${CYTHING_SRC}/ble/ble_pairing.c"
 	"${CYTHING_SRC}/ble/ble_beacon.c"
+	"${CYTHING_SRC}/ble/ble_app_gatt.c"
 	"${CYTHING_SRC}/ble/discovery_mode.c"
 	"${CYTHING_SRC}/tcp_server/tcp_server.c"
 	"${CYTHING_SRC}/tcp_server/tcp_client_recv.c"
@@ -97,7 +98,8 @@ if(cything_cert_filled AND cything_key_filled)
 endif()
 
 # WHOLE_ARCHIVE: the weak default hooks/config (tcp_command.c,
-# aws_iot_handler.c, access_policy.c, claim_credentials.c, cy_config.c) live
+# aws_iot_handler.c, access_policy.c, claim_credentials.c, cy_config.c,
+# ble_app_gatt.c) live
 # in this component's archive; the application's strong overrides live in
 # main. A linker only extracts an archive member when it resolves a
 # currently-undefined symbol, and a weak definition counts — so without this,

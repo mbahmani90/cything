@@ -25,6 +25,7 @@
 #include "ota_lib/flash_boot_handler.h"
 #include "aws/provisioning.h"
 #include "aws/mqtt_response_fifo.h"
+#include "ble/ble_app_gatt.h"
 #include "ble/ble_beacon.h"
 #include "ble/ble_config.h"
 #include "ble/ble_pairing.h"
@@ -117,15 +118,18 @@ void cything_begin(void)
         sprintf(ssid_arg , flash_router_ssid);//"GalaxyA35");//"Xiaomi326589");//flash_router_ssid);
         sprintf(pass_arg , flash_router_password);//"Majid4321");//flash_router_password);
         
-#if BLE_SCAN_BEACON_ENABLED
         /* Station-mode scan beacon (doc/ble-scan-beacon.md): advertises the
          * LAN IP once the router hands one out — station_mode.c drives it
-         * from the IP events. */
-        ble_beacon_start();
-#else
-        /* Bluetooth is only used for pairing: reclaim its RAM. */
-        ble_release_memory();
-#endif
+         * from the IP events. With a GATT table from the sketch
+         * (doc/ble-gatt-server.md) the same advertisement is connectable and
+         * serves the channel's services; that keeps BLE up even with
+         * BLE_SCAN_BEACON_ENABLED 0. */
+        if(BLE_SCAN_BEACON_ENABLED || ble_app_gatt_service_count() > 0){
+            ble_beacon_start();
+        }else{
+            /* Bluetooth is only used for pairing: reclaim its RAM. */
+            ble_release_memory();
+        }
 
         xTaskCreate(wifi_init_sta, "wifi_init_sta_task", WIFI_STA_TASK_STACK_SIZE, NULL, WIFI_STA_TASK_PRIORITY, NULL);		
         wifi_if_mode = STA_MODE; 

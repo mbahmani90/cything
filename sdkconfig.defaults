@@ -13,7 +13,19 @@ CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y
 # Peripheral only: no scanning / central role code.
 # CONFIG_BT_NIMBLE_ROLE_CENTRAL is not set
 # CONFIG_BT_NIMBLE_ROLE_OBSERVER is not set
-CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=3
+# Station-mode GATT server (doc/ble-gatt-server.md), only active when the
+# sketch has a BLE table: up to 3 phones at once (the ESP32 controller's
+# BTDM_CTRL_BLE_MAX_CONN default is 3 too; pairing mode only ever uses one).
+# Bonds — so the OS pairing dialog shows once per phone — survive a reboot in
+# NVS. Bonded phones' notification subscriptions are stored too; 32 slots
+# keeps a channel with many NOTIFY characteristics from evicting bonds.
+# The NimBLE attribute table itself is sized at runtime from the table (no
+# static limit to raise for 16 services x 32 characteristics). The hooks run
+# on the host task, hence 1 KB more stack than the 4 KB default.
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+CONFIG_BT_NIMBLE_MAX_CCCDS=32
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=5120
 # Free the mbedTLS record buffers (16 KB in + 4 KB out) while the MQTT/TLS
 # link is idle, and the CA/config data after the handshake: the heap they held
 # is what a phone's SRP-3072 PAKE and its 10 KB connection task need.

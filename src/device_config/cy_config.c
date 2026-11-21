@@ -13,6 +13,7 @@
 #include "device_config/device_config.h"
 #include "wifi/wifi_config.h"
 #include "ble/ble_config.h"
+#include "ble/ble_app_gatt.h"
 #include "common/cy_log.h"
 
 __attribute__((weak)) const char     cy_ap_ssid_prefix[]     = ESP_AP_WIFI_SSID_PREFIX;
@@ -28,6 +29,12 @@ __attribute__((weak)) const char     cy_mdns_channel_tag[]   = MDNS_CHANNEL_TAG;
 __attribute__((weak)) const uint8_t  cy_ble_base_uuid128[16] = {
     BLE_PAIRING_UUID128_BYTES(0x0000)
 };
+
+/* Station-mode GATT table (ble/ble_app_gatt.h): none by default. Must stay
+ * in a file that never reads them — GCC folds a weak const scalar whose
+ * initializer it sees, and the sketch's table would be ignored. */
+__attribute__((weak)) const cything_ble_svc_t *const cy_ble_services      = NULL;
+__attribute__((weak)) const uint8_t                  cy_ble_service_count = 0;
 
 __attribute__((weak)) const char cy_device_name[]      = DEVICE_NAME;
 __attribute__((weak)) const char cy_device_type[]      = DEVICE_TYPE;
