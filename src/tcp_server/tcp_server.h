@@ -18,10 +18,17 @@
  * CONFIG_LWIP_MAX_SOCKETS = 10, shared with the listener, UDP, MQTT/TLS and
  * DNS) and a TCP_SERVER_RECV_TASK_STACK_SIZE task stack, so the cap is what
  * keeps a burst of phone reconnects from exhausting either. At the cap a new
- * connection replaces the same phone's (same IP) older one, or is refused. */
+ * connection replaces the same phone's (same IP) older one, or is refused.
+ *
+ * The channel sets it (cy_tcp_client_max, the app's network configuration);
+ * TCP_CLIENT_MAX is the default, TCP_CLIENT_LIMIT the most the sockets allow. */
 #ifndef TCP_CLIENT_MAX
 #define TCP_CLIENT_MAX 3
 #endif
+#define TCP_CLIENT_LIMIT 5
+
+/* cy_tcp_client_max clamped to 1..TCP_CLIENT_LIMIT. */
+int tcp_client_max(void);
 
 /* Keepalive on phone connections: a phone that vanished without closing
  * (Wi-Fi switch, app killed) is dropped after IDLE + INTVL * CNT seconds

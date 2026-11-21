@@ -270,15 +270,23 @@ itself.
 | `BLE_APP_GATT_BONDING` | `ble_config.h` | 1 | keep LE bonds |
 | `BLE_APP_AUTH_SVC_ID` / `_CHR_ID` / `BLE_APP_INFO_CHR_ID` | `ble_config.h` | `0x0110` / `0x0111` / `0x0112` | |
 | `LOCAL_AUTH_ENFORCE` | `device_config.h` | 1 | shared with TCP |
-| `CONFIG_BT_NIMBLE_MAX_CONNECTIONS` | `sdkconfig.defaults` | 3 (was 1) | phones at once |
+| `CONFIG_BT_NIMBLE_MAX_CONNECTIONS` | `sdkconfig.defaults` | 3 (was 1); per channel in generated projects, 1–9 | phones at once. Up to 9 on the classic ESP32 |
+| `CONFIG_BTDM_CTRL_BLE_MAX_CONN` / `CONFIG_BT_CTRL_BLE_MAX_ACT` | `sdkconfig.defaults` | 3 / 6 | the controller's own limit: ESP32 (1 KB DRAM per slot, reserved whenever Bluetooth is on) / ESP32-S3, C3 (connections plus the advertiser, max 10). Generated projects raise it with the BLE connections |
+| `CONFIG_BT_NIMBLE_MAX_BONDS` | `sdkconfig.defaults` | 3 | stored bonds; a phone beyond it evicts the oldest bond (and sees the OS pairing dialog again). Generated projects set it to the BLE connections |
 | `CONFIG_BT_NIMBLE_NVS_PERSIST` | `sdkconfig.defaults` | y | bonds survive a reboot |
 | `CONFIG_BT_NIMBLE_MAX_CCCDS` | `sdkconfig.defaults` | 32 (was 8) | bonded phones' stored subscriptions; an overflow evicts the oldest bond |
 | `CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE` | `sdkconfig.defaults` | 5120 (was 4096) | the hooks run there |
 
 The app ships its own copy of `sdkconfig.defaults` in every generated
-ESP-IDF project (`FirmwareSketchBundle.IDF_SDKCONFIG_DEFAULTS`); it needs the
-same four lines. Arduino builds take NimBLE-Arduino's `nimconfig.h`
-defaults instead (3 connections, bonds in NVS).
+ESP-IDF project (`FirmwareSketchBundle.IDF_SDKCONFIG_DEFAULTS`), with the
+channel's BLE connection count (its network configuration) in the four
+connection and bond lines above. An existing `sdkconfig` keeps its old values:
+delete it once so the build picks up new defaults. Arduino builds take
+NimBLE-Arduino's `nimconfig.h` defaults instead (3 connections, bonds in NVS);
+a sketch cannot change them.
+
+The Wi-Fi limit is a runtime channel setting instead (`cy_tcp_client_max`,
+see [tcp-server.md](tcp-server.md)), so it applies to Arduino builds too.
 
 `BLE_SCAN_BEACON_ENABLED 0` now only drops station-mode BLE when there is
 no table; with a table the beacon + server start anyway.

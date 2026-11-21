@@ -38,6 +38,12 @@ extern const char     cy_router_pass_prefix[];
 /** Local TCP command server / UDP discovery ports. */
 extern const uint16_t cy_tcp_port;
 extern const uint16_t cy_udp_port;
+/**
+ * Phones connected over Wi-Fi (the TCP command server) at once. Per channel, from
+ * the app's network configuration; clamped to 1..TCP_CLIENT_LIMIT at runtime
+ * (tcp_server/tcp_server.h): each one costs a socket and a receive task.
+ */
+extern const uint8_t  cy_tcp_client_max;
 /** Discovery request token, e.g. "GET_INFO". */
 extern const char     cy_scan_command[];
 /** First field of the MQTT get-info reply, e.g. "ACK". */

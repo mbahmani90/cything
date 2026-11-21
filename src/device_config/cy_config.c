@@ -13,6 +13,7 @@
 #include "device_config/device_config.h"
 #include "wifi/wifi_config.h"
 #include "ble/ble_config.h"
+#include "tcp_server/tcp_server.h"
 #include "ble/ble_app_gatt.h"
 #include "common/cy_log.h"
 
@@ -21,6 +22,7 @@ __attribute__((weak)) const char     cy_router_ssid_prefix[] = SET_ROUTER_SSID_P
 __attribute__((weak)) const char     cy_router_pass_prefix[] = SET_ROUTER_PASS_PREFIX;
 __attribute__((weak)) const uint16_t cy_tcp_port             = TCP_PORT;
 __attribute__((weak)) const uint16_t cy_udp_port             = UDP_PORT;
+__attribute__((weak)) const uint8_t  cy_tcp_client_max       = TCP_CLIENT_MAX;
 __attribute__((weak)) const char     cy_scan_command[]       = SCAN_COMMAND;
 __attribute__((weak)) const char     cy_scan_response[]      = AWS_SCAN_RESPONSE;
 __attribute__((weak)) const char     cy_mdns_channel_tag[]   = MDNS_CHANNEL_TAG;
@@ -52,8 +54,8 @@ size_t cy_scan_command_len(void){
 }
 
 void cy_config_log(void){
-    CY_LOGI(1, "config: tcp=%u udp=%u scan='%s' resp='%s' ap='%s' mdns_tag='%s'",
-            (unsigned)cy_tcp_port, (unsigned)cy_udp_port,
+    CY_LOGI(1, "config: tcp=%u udp=%u wifi_clients=%d scan='%s' resp='%s' ap='%s' mdns_tag='%s'",
+            (unsigned)cy_tcp_port, (unsigned)cy_udp_port, tcp_client_max(),
             cy_scan_command, cy_scan_response, cy_ap_ssid_prefix,
             cy_mdns_channel_tag);
     CY_LOGI(1, "config: device='%s' type='%s' hw=%s fw=%s ble=%02X%02X....%02X%02X",

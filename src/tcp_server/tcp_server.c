@@ -13,6 +13,14 @@
 #include "security/local_session.h"
 #include "device_config/cy_config.h"
 
+
+int tcp_client_max(void){
+    int n = cy_tcp_client_max;
+    if(n < 1) n = 1;
+    if(n > TCP_CLIENT_LIMIT) n = TCP_CLIENT_LIMIT;
+    return n;
+}
+
 void tcp_server_task(void *pvParameters)
 {
     int addr_family = (int)pvParameters;
@@ -83,8 +91,8 @@ void tcp_server_task(void *pvParameters)
 
             // At the cap: the same phone reconnecting replaces its own older
             // connection(s) (their recv tasks clean up); anyone else is refused.
-            if(local_session_count_tcp() >= TCP_CLIENT_MAX && local_session_shutdown_peer(peer_ip) == 0){
-                CY_LOGW(TCP_SERVER_DB, "%d connections already, rejecting", TCP_CLIENT_MAX);
+            if(local_session_count_tcp() >= tcp_client_max() && local_session_shutdown_peer(peer_ip) == 0){
+                CY_LOGW(TCP_SERVER_DB, "%d connections already, rejecting", tcp_client_max());
                 shutdown(sock, 0);
                 close(sock);
                 continue;

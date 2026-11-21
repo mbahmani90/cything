@@ -37,6 +37,10 @@ const uint8_t  cy_ble_base_uuid128[16] = { CYTHING_BLE_BASE_UUID128_BYTES };
 #ifdef CYTHING_MDNS_CHANNEL_TAG
 const char     cy_mdns_channel_tag[]   = CYTHING_MDNS_CHANNEL_TAG;
 #endif
+/* Guarded so a network spec from before the setting still builds. */
+#ifdef CYTHING_TCP_CLIENT_MAX
+const uint8_t  cy_tcp_client_max       = CYTHING_TCP_CLIENT_MAX;
+#endif
 /* Station-mode GATT table; guarded so a network spec without one still
  * builds (the library's weak NULL / 0 then apply: beacon only). */
 #ifdef CYTHING_BLE_SERVICE_COUNT

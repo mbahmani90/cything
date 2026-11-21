@@ -19,7 +19,9 @@
  * wipes its key material.
  */
 
-#define LOCAL_SESSION_MAX 8
+/* Every Wi-Fi client (TCP_CLIENT_LIMIT) and BLE connection (at most 9 on the
+ * ESP32 controller) can hold a session at once. */
+#define LOCAL_SESSION_MAX 14
 
 /* Where a connection is in the handshake. Transitions are owned by the
  * security handlers (pake_handler.c / local_auth.c); everything else only

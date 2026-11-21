@@ -323,7 +323,7 @@ is 1, `claim` as before. See [udp-discovery.md](udp-discovery.md).
 | Define | Where | Default | Meaning |
 |---|---|---|---|
 | `LOCAL_AUTH_ENFORCE` | device_config.h | 0 | apply the access policy |
-| `LOCAL_SESSION_MAX` | local_session.h | 8 | concurrent local sockets |
+| `LOCAL_SESSION_MAX` | local_session.h | 14 | concurrent sessions: every Wi-Fi client (5) and BLE connection (9) |
 | `PAIRED_LIST_MAX` | paired_list.h | 16 | paired accounts |
 | `DEVICE_PW_MIN_LEN` / `MAX_LEN` | device_password.h | 8 / 64 | |
 | `cy_initial_password` | cything_device_params.h (`CYTHING_INITIAL_PASSWORD`) | `12345678` | PAKE password while none is set |
