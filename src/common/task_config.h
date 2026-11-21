@@ -60,4 +60,10 @@
 #define BLE_COMMIT_TASK_STACK_SIZE        4096
 #define BLE_COMMIT_TASK_PRIORITY          5
 
+/* Station-mode BLE line link (ble/ble_app_gatt.c): one short-lived task per
+ * PAKE / ENROLL / AUTH line. SRP-3072 needs the same stack as a TCP client
+ * task. */
+#define BLE_LINK_TASK_STACK_SIZE          10240
+#define BLE_LINK_TASK_PRIORITY            5
+
 #endif /* TASK_CONFIG_H */

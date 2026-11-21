@@ -100,7 +100,7 @@ In the channel base UUID the library uses:
 |---|---|
 | `0x0001`–`0x0006` | Wi-Fi pairing service (pairing mode) |
 | `0x0101` | scan beacon service UUID |
-| `0x0110` / `0x0111` / `0x0112` | AUTH service / auth characteristic / INFO characteristic (station mode, see below) |
+| `0x0110` / `0x0111` / `0x0112` | AUTH service / line link (PAKE, ENROLL, AUTH) / INFO characteristic (station mode, see below) |
 
 **The app must keep channel services and characteristics out of
 `0x0001`–`0x0006` and `0x0100`–`0x01FF`.** A channel service on `0x0110` is
@@ -173,24 +173,39 @@ command channel:
    stored under, and the caps (`nopw` = open device, nothing to prove;
    `authreq`; `email`). Public, like `GET_INFO`. A phone that found the
    device over BLE reads it first.
-3. **Paired account.** The library's AUTH characteristic
-   (`6A480111-…` in service `6A480110-…`, write + read + notify) runs the TCP
-   reconnect handshake with the **same text lines** — the app reuses its
-   code and the account's `K_account` (escrowed in the backend):
+3. **Pairing and reconnecting: the line link.** Since 1.5.0 the AUTH
+   characteristic (`6A480111-…` in service `6A480110-…`, read + write) carries
+   the **same lines as the TCP link** — `PAKE1..4` (pair with the device
+   password, or the initial password of an open device), `ENROLL` (inside
+   `ENC:` frames under `K_pake`, returns the account's `K_account`) and
+   `AUTH1..3` (reconnect with `K_account`). Each BLE connection is a
+   pseudo-socket in the TCP session pool (`security/local_link_io.h`), so
+   `pake_handler.c`, `local_auth.c` and `enc_frame.c` serve it unchanged:
+   same rate limiting (one bucket for all BLE phones, plus the global
+   limit), same paired list, same pairing events, same revocation. The app
+   reuses its TCP handshake code.
+
+   Lines are longer than an attribute (512 bytes; `PAKE1` and `PAKE2` are
+   ~520–550), so both directions move in chunks of up to 500 bytes:
 
    ```
-   app -> write  AUTH1:<b64 userSub>,<b64 N_p>
-   dev -> notify AUTH2:<b64 N_d>,<b64 HMAC(K_account, "dev" ‖ N_p ‖ N_d)>   | ERR:UNKNOWN | ERR:BADFMT
-   app -> write  AUTH3:<b64 HMAC(K_account, "phn" ‖ N_d ‖ N_p)>
-   dev -> notify AUTHOK:<owner|user>                                          | ERR:BADAUTH | ERR:SEQ | ERR:BADFMT
+   phone write   up to 500 bytes of the line; the last chunk ends in "\n"
+   phone read    the current chunk of the reply; empty while the device is still working
+   phone write   "\n" alone (no line in progress): next chunk of the reply
    ```
 
-   Subscribe to the characteristic first; the notification is cut at
-   MTU−3 (AUTH2 is 75 bytes), so on the 23-byte default MTU **read** the
-   characteristic instead — a read always returns the last reply in full.
-   AUTH1 is ~85 bytes: write it as a long write, or after an MTU exchange.
-   Only AUTH runs over BLE: a phone pairs (`PAKE` + `ENROLL`) over TCP, or
-   fetches the account key from the escrow, before it can use BLE.
+   A complete line starts a short-lived worker task (SRP-3072 needs ~10 KB
+   of stack and a second or two — too much for the BLE host task); poll
+   with reads until the reply appears. A new line discards whatever was left
+   of the previous reply; a line sent while one is still being worked on
+   gets ATT error `0x82` (`CYTHING_BLE_ATT_ERR_BUSY`). Only these handshake
+   lines run here: owner commands (`PWSET`, `LIST`, `REVOKE`, …) stay on TCP.
+
+   The connection counts as paired from `ENROLLED` or `AUTHOK` on, as a TCP
+   socket does (`access_policy_sock_authenticated`). After `PAKE4` the
+   device answers in `ENC:` frames, as on TCP; the channel's characteristic
+   values never are (see below). 1.4.1's single-write `AUTH` without `\n`
+   is not accepted any more.
 4. **Policy per access.** Read, write and notify on a channel
    characteristic need an authenticated connection, unless
    `app_ble_is_public(name)` says otherwise, or the device is open (no
@@ -201,9 +216,10 @@ command channel:
    `LOCAL_AUTH_ENFORCE 0`: everything is accepted and the would-be refusal is
    logged at debug level, as on TCP.
 
-No session key on BLE: TCP needs `ENC:` frames because the LAN is shared;
-here the LE link is already AES-CCM encrypted and integrity-protected, so
-characteristic values stay raw bytes.
+Channel characteristic values are not wrapped: TCP needs `ENC:` frames
+because the LAN is shared; here the LE link is already AES-CCM encrypted and
+integrity-protected, so they stay raw bytes. Only the handshake lines on the
+auth characteristic use `ENC:` (`ENROLL` carries the account key).
 
 **Residual risk — accepted for now (2026-11-21).** Just Works pairing does not
 authenticate the link: an attacker who is in radio range *at the moment a

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "lwip/sockets.h"
+#include "security/local_link_io.h"
 #include "mbedtls/base64.h"
 #include "esp_srp.h"
 
@@ -26,8 +27,8 @@ void security_send_line(int sock, const char *text){
         enc_frame_send(sock, buf, n);
     }else{
         /* Long handshake lines (PAKE2) are always pre-key, so plaintext. */
-        send(sock, text, strlen(text), 0);
-        send(sock, "\n", 1, 0);
+        local_link_send(sock, text, strlen(text));
+        local_link_send(sock, "\n", 1);
     }
 }
 

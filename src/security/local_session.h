@@ -79,6 +79,10 @@ void local_session_release(int sock);
 /* Number of slots in use (diagnostics). */
 int local_session_count(void);
 
+/* Slots held by TCP sockets: what the listener's TCP_CLIENT_MAX cap counts.
+ * BLE pseudo-sockets (security/local_link_io.h) share the pool but not the cap. */
+int local_session_count_tcp(void);
+
 /* Shut down (SHUT_RDWR) every live socket from `peer_ip`. Their receive
  * tasks then see the connection end and release the slot themselves. Used by
  * the listener when it is at its connection cap: a phone that reconnects
