@@ -100,7 +100,7 @@ In the channel base UUID the library uses:
 |---|---|
 | `0x0001`–`0x0006` | Wi-Fi pairing service (pairing mode) |
 | `0x0101` | scan beacon service UUID |
-| `0x0110` / `0x0111` | AUTH service / characteristic (station mode, see below) |
+| `0x0110` / `0x0111` / `0x0112` | AUTH service / auth characteristic / INFO characteristic (station mode, see below) |
 
 **The app must keep channel services and characteristics out of
 `0x0001`–`0x0006` and `0x0100`–`0x01FF`.** A channel service on `0x0110` is
@@ -167,7 +167,13 @@ command channel:
    (`BLE_APP_GATT_BONDING`), so the OS pairing dialog shows once per phone,
    not per connection; bonds persist in NVS (`CONFIG_BT_NIMBLE_NVS_PERSIST`).
    A phone that lost its bond re-pairs (`REPEAT_PAIRING` deletes the old one).
-2. **Paired account.** The library's AUTH characteristic
+2. **Which device, and is AUTH needed.** The AUTH service also has a
+   read-only INFO characteristic (`6A480112-…`, since 1.4.1) returning the
+   same CSV as `GET_INFO` on the LAN: the `deviceId` the account key is
+   stored under, and the caps (`nopw` = open device, nothing to prove;
+   `authreq`; `email`). Public, like `GET_INFO`. A phone that found the
+   device over BLE reads it first.
+3. **Paired account.** The library's AUTH characteristic
    (`6A480111-…` in service `6A480110-…`, write + read + notify) runs the TCP
    reconnect handshake with the **same text lines** — the app reuses its
    code and the account's `K_account` (escrowed in the backend):
@@ -185,7 +191,7 @@ command channel:
    AUTH1 is ~85 bytes: write it as a long write, or after an MTU exchange.
    Only AUTH runs over BLE: a phone pairs (`PAKE` + `ENROLL`) over TCP, or
    fetches the account key from the escrow, before it can use BLE.
-3. **Policy per access.** Read, write and notify on a channel
+4. **Policy per access.** Read, write and notify on a channel
    characteristic need an authenticated connection, unless
    `app_ble_is_public(name)` says otherwise, or the device is open (no
    password set: everything is public, as on TCP). A refused read / write
@@ -246,7 +252,7 @@ itself.
 |---|---|---|---|
 | `BLE_APP_GATT_REQUIRE_ENCRYPTION` | `ble_config.h` | 1 | LE encryption on every characteristic |
 | `BLE_APP_GATT_BONDING` | `ble_config.h` | 1 | keep LE bonds |
-| `BLE_APP_AUTH_SVC_ID` / `_CHR_ID` | `ble_config.h` | `0x0110` / `0x0111` | |
+| `BLE_APP_AUTH_SVC_ID` / `_CHR_ID` / `BLE_APP_INFO_CHR_ID` | `ble_config.h` | `0x0110` / `0x0111` / `0x0112` | |
 | `LOCAL_AUTH_ENFORCE` | `device_config.h` | 1 | shared with TCP |
 | `CONFIG_BT_NIMBLE_MAX_CONNECTIONS` | `sdkconfig.defaults` | 3 (was 1) | phones at once |
 | `CONFIG_BT_NIMBLE_NVS_PERSIST` | `sdkconfig.defaults` | y | bonds survive a reboot |

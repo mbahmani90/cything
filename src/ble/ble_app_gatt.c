@@ -35,6 +35,8 @@
 #include "security/device_password.h"
 #include "security/local_auth.h"
 #include "security/paired_list.h"
+#include "udp_socket/udp_response_handler.h"
+#include "udp_socket/udp_server.h"
 
 #ifndef LOCAL_AUTH_ENFORCE
 #define LOCAL_AUTH_ENFORCE 0
@@ -87,6 +89,7 @@ static struct ble_gatt_svc_def *svc_defs;    /* svc_total + auth + {0}   */
 static ble_uuid128_t auth_svc_uuid;
 static ble_uuid128_t auth_chr_uuid;
 static uint16_t      auth_val_handle;
+static ble_uuid128_t info_chr_uuid;
 
 static bool running = false;
 
@@ -349,6 +352,22 @@ static int auth_access(uint16_t conn_handle, uint16_t attr_handle,
     return 0;
 }
 
+/* --------------------------------------------------------------- info --- */
+
+/* The GET_INFO CSV, as the UDP scan reply and the pairing service's Info
+ * characteristic carry it: deviceId, caps (nopw / authreq / email), ... A
+ * phone that found the device over BLE reads it to learn which device this
+ * is (the key it holds is stored under that deviceId) and whether AUTH is
+ * needed. Public, like GET_INFO on the LAN. */
+static int info_access(uint16_t conn_handle, uint16_t attr_handle,
+                       struct ble_gatt_access_ctxt *ctxt, void *arg){
+    (void)conn_handle; (void)attr_handle; (void)arg;
+    static char info[UDP_REPLY_MAX];   /* host task only */
+    if(ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) return BLE_ATT_ERR_UNLIKELY;
+    int n = udp_get_info_response(info, sizeof(info));
+    return os_mbuf_append(ctxt->om, info, n > 0 ? (size_t)n : 0) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+}
+
 /* ------------------------------------------------------------- notify --- */
 
 int cything_ble_notify(const char *name, const uint8_t *data, int len){
@@ -550,6 +569,7 @@ int ble_app_gatt_register(void){
 
     ble_uuid128_from_base(&auth_svc_uuid, BLE_APP_AUTH_SVC_ID);
     ble_uuid128_from_base(&auth_chr_uuid, BLE_APP_AUTH_CHR_ID);
+    ble_uuid128_from_base(&info_chr_uuid, BLE_APP_INFO_CHR_ID);
 
     /* Count first, so everything is one allocation per array. */
     int n_chr = 0;
@@ -566,7 +586,7 @@ int ble_app_gatt_register(void){
 
     chr_rt   = calloc(n_chr > 0 ? n_chr : 1, sizeof(*chr_rt));
     uuids    = calloc(n_svc + n_chr, sizeof(*uuids));
-    chr_defs = calloc(n_chr + n_svc + 2, sizeof(*chr_defs));
+    chr_defs = calloc(n_chr + n_svc + 3, sizeof(*chr_defs));   /* + auth, info, {0} */
     svc_defs = calloc(n_svc + 2, sizeof(*svc_defs));
     subs_bytes = (n_chr + 7) / 8 + 1;
     bool ok = chr_rt && uuids && chr_defs && svc_defs;
@@ -625,12 +645,16 @@ int ble_app_gatt_register(void){
         out_svc++;
     }
 
-    /* The library's AUTH service, last. */
+    /* The library's AUTH service, last: auth + info. */
     struct ble_gatt_chr_def *auth = &chr_defs[d];
     auth->uuid       = &auth_chr_uuid.u;
     auth->access_cb  = auth_access;
     auth->val_handle = &auth_val_handle;
     auth->flags      = F_READ | F_WRITE | F_NOTIFY;
+    struct ble_gatt_chr_def *info = &chr_defs[d + 1];
+    info->uuid       = &info_chr_uuid.u;
+    info->access_cb  = info_access;
+    info->flags      = F_READ;
     svc_defs[out_svc].type            = BLE_GATT_SVC_TYPE_PRIMARY;
     svc_defs[out_svc].uuid            = &auth_svc_uuid.u;
     svc_defs[out_svc].characteristics = auth;

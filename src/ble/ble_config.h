@@ -92,6 +92,7 @@
  * scan beacon). */
 #define BLE_APP_AUTH_SVC_ID     0x0110
 #define BLE_APP_AUTH_CHR_ID     0x0111   /* write: AUTH1/AUTH3 line; read + notify: the reply */
+#define BLE_APP_INFO_CHR_ID     0x0112   /* read: the GET_INFO CSV (deviceId, caps, ...) */
 
 /* 1: every channel characteristic and the auth characteristic need an
  * encrypted link (LE Secure Connections, Just Works). The phone's OS pairs
