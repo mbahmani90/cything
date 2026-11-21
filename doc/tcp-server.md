@@ -366,6 +366,7 @@ Things worth knowing that follow from the table:
 | Macro | Default | Where | Meaning |
 |---|---|---|---|
 | `TCP_PORT` | `1234` | [device_config/device_config.h](../src/device_config/device_config.h) | listening port |
+| `cy_tcp_client_max` (`CYTHING_TCP_CLIENT_MAX`) | `TCP_CLIENT_MAX` = 3 | channel network spec ([device_config/cy_config.h](../src/device_config/cy_config.h)) | phones connected at once, set per channel in the app's network configuration; clamped to 1..`TCP_CLIENT_LIMIT` (5), what the device's 10 sockets allow next to the listener, UDP, MQTT/TLS and DNS |
 | `TCP_RECEIVE_DATA_LENGTH` | `5120` | [tcp_server/tcp_client_recv.h](../src/tcp_server/tcp_client_recv.h) | max line length incl. `\n` |
 | `TCP_RECEIVE_DATA_SUFFIX` / `_LENGTH` | `"\n"` / `1` | [tcp_server/tcp_client_recv.h](../src/tcp_server/tcp_client_recv.h) | line terminator |
 | `TCP_RECEIVE_TIMEOUT_MS` | `100` | [tcp_server/tcp_client_recv.h](../src/tcp_server/tcp_client_recv.h) | inter-byte `SO_RCVTIMEO` |

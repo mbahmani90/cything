@@ -12,6 +12,8 @@
 #define CYTHING_ROUTER_PASS_PREFIX  "pass:"
 #define CYTHING_TCP_PORT            1234
 #define CYTHING_UDP_PORT            1234
+/* Phones connected over Wi-Fi at once (1-5). */
+#define CYTHING_TCP_CLIENT_MAX      3
 #define CYTHING_SCAN_COMMAND        "GET_INFO"
 #define CYTHING_SCAN_RESPONSE       "ACK"
 /* mDNS: TXT "ch=" of the fixed _cything._tcp service; the app derives it
